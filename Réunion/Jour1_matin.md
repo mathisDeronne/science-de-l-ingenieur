@@ -30,7 +30,7 @@ Non précisé. La réunion a démarré par les questions des équipes sur la pr�
 - La stratégie doit respecter les règles du jeu.
 
 **Actions**
-- Mettre en place le serveur HTTP (à partir du template par défaut) et transmettre l'URL à l'arbitre. Responsable : les équipes (non nominatif). Échéance : dès que possible.
+- Mettre en place le serveur HTTP (à partir du template par défaut) et transmettre l'URL à l'arbitre. Responsable : l'équipe 4. Échéance : dès que possible.
 
 ### 2. Classement et évaluation
 
@@ -82,7 +82,8 @@ Non précisé. La réunion a démarré par les questions des équipes sur la pr�
 
 ## Prochaine réunion
 
-Non précisé.
+- **Date** : 07/10/2026
+- **Heure de début** : 14h10
 
 ## Points à vérifier (transcription automatique)
 
