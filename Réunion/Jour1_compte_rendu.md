@@ -12,6 +12,7 @@
 - Clonage du dépôt sur le serveur via SSH, puis installation des dépendances.
 - Test d'échange client ↔ serveur (« arbitre »). Le test est fonctionnel. Aprés lui avoir envoier le lien "https://le-4eme-empire.alwaysdata.net/"
 - Modification du nom d'utilisateur côté arbitre pour la configuration du test.
+- accès a la trame envoyée par l'arbitre & a la situation de la partie
 
 ### Analyse et organisation
 - Rédaction des comptes rendus de réunion et préparation des questions pour les réunions.
