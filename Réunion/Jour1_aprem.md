@@ -15,8 +15,6 @@
 1. Échanges avec l'arbitre (format, actions légales, erreurs)
 2. Déroulement exact d'un tour et fin de partie
 3. Cartes : méthode et calendrier
-4. Évaluation, délais et démo de fin de journée
-5. Récapitulatif des décisions
 
 ## Sujets abordés
 
