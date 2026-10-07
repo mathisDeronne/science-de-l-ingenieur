@@ -1,4 +1,4 @@
-# Pré-rapport — Première réunion client
+# Pré-rapport — Première réunion client 
 ## Projet : Jeu de stratégie — Gestion d’un royaume
 
 ### 1. Équipe projet
