@@ -110,7 +110,7 @@ def start_turn(game_id: GameIdDependency) -> DopynionResponseStr:
 @app.post("/play")
 def play(_game: Game, game_id: GameIdDependency) -> DopynionResponseStr:
     print("\n==== PLAY ====\n")
-    print(game.model_dump().keys())
+    print(_game.model_dump().keys())
     return DopynionResponseStr(game_id=game_id, decision="END_TURN")
 
 
