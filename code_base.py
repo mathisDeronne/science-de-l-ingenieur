@@ -108,9 +108,15 @@ def start_turn(game_id: GameIdDependency) -> DopynionResponseStr:
 
 
 @app.post("/play")
+<<<<<<< HEAD
 def play(game: Game, game_id: GameIdDependency) -> DopynionResponseStr:
     print(f"\n==== PLAY (partie {game_id}) ====")
     print(f"Trame reçue :\n{game.model_dump_json(indent=2)}", flush=True)
+=======
+def play(_game: Game, game_id: GameIdDependency) -> DopynionResponseStr:
+    print("\n==== PLAY ====\n")
+    print(_game.model_dump().keys())
+>>>>>>> 6a930a3f2e427c275ea8eb1931f7182d520a48c7
     return DopynionResponseStr(game_id=game_id, decision="END_TURN")
 
 
