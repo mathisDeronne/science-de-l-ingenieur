@@ -30,6 +30,7 @@ Le client peut avoir une idée générale du projet sans être capable d'exprime
 - Quelles sont les contraintes de délai ?
 - Quel est le minimum nécessaire pour avoir une première version jouable ?
 - Comment le client va-t-il évaluer le projet ?
+- quelles sont toutes les cartes disponibles ainsi que leurs effets
 
 L'objectif est de pouvoir ensuite construire un **MVP**, puis améliorer progressivement le projet par développement itératif et incrémental.
 
