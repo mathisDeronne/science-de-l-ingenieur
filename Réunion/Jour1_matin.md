@@ -12,7 +12,7 @@
 
 ## Ordre du jour initial
 
-Non précisé. La réunion a démarré par les questions des équipes sur la présentation du matin.
+Réunion de lancement du projet et présentation des objectifs généraux du projet.
 
 ## Sujets abordés
 
