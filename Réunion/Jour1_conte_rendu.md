@@ -10,7 +10,7 @@
 - Création du dépôt GitHub public. "https://github.com/mathisDeronne/science-de-l-ingenieur/tree/main"
 - Récupération et ajout du code test fourni sur le Github
 - Clonage du dépôt sur le serveur via SSH, puis installation des dépendances.
-- Test d'échange client ↔ serveur (« arbitre »). Le test est fonctionnel.
+- Test d'échange client ↔ serveur (« arbitre »). Le test est fonctionnel. Aprés lui avoir envoier le lien "https://le-4eme-empire.alwaysdata.net/"
 - Modification du nom d'utilisateur côté arbitre pour la configuration du test.
 
 ### Analyse et organisation
