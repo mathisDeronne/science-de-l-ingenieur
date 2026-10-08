@@ -28,19 +28,13 @@ FICHIER_LOGS = Path(__file__).resolve().parent / "logs.json"
 _verrou_logs = threading.Lock()  # evite que deux requetes ecrivent en meme temps
 
 
-def ecrire_log(entree: dict[str, Any]) -> None:
-    """Ajoute une entree a la liste JSON du fichier logs.json."""
-    entree = {"horodatage": datetime.now().isoformat(timespec="seconds"), **entree}
+def ecrire_situation(situation: dict[str, Any]) -> None:
+    """Ecrase logs.json avec la derniere situation de la partie
+    (le fichier ne contient toujours qu'une seule situation, la plus recente)."""
+    situation = {"horodatage": datetime.now().isoformat(timespec="seconds"), **situation}
     with _verrou_logs:
-        try:
-            logs = json.loads(FICHIER_LOGS.read_text(encoding="utf-8"))
-            if not isinstance(logs, list):
-                logs = []
-        except (FileNotFoundError, ValueError):
-            logs = []
-        logs.append(entree)
         FICHIER_LOGS.write_text(
-            json.dumps(logs, indent=2, ensure_ascii=False), encoding="utf-8"
+            json.dumps(situation, indent=2, ensure_ascii=False), encoding="utf-8"
         )
 
 
@@ -66,24 +60,12 @@ async def log_requests(request: Request, call_next):
         f"\n>>> {request.method} {request.url.path} | partie={game_id}\n{affichage}",
         flush=True,
     )
-    ecrire_log(
-        {
-            "type": "requete",
-            "methode": request.method,
-            "route": request.url.path,
-            "partie": game_id,
-            "contenu": contenu,
-        }
-    )
     return await call_next(request)
 
 
 def log_decision(game_id: str, route: str, decision: Any) -> None:
-    """Affiche et enregistre la decision renvoyee au serveur."""
-    print(f">>> Décision ({route}) : {decision}", flush=True)
-    ecrire_log(
-        {"type": "decision", "route": route, "partie": game_id, "decision": decision}
-    )
+    """Affiche dans la console la decision renvoyee au serveur."""
+    print(f">>> Décision ({route}) partie={game_id} : {decision}", flush=True)
 
 
 #####################################################
@@ -126,9 +108,6 @@ GameIdDependency = Annotated[str, Depends(get_game_id)]
 @app.exception_handler(Exception)
 def unknown_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
     print(exc.__class__.__name__, str(exc))
-    ecrire_log(
-        {"type": "erreur", "nom": exc.__class__.__name__, "detail": str(exc)}
-    )
     return JSONResponse(
         status_code=500,
         content={
@@ -195,7 +174,7 @@ def afficher_situation(game: Game, game_id: str) -> None:
     if moi is None:
         moi = next((p for p in game.players if p.name == NOM_JOUEUR), None)
 
-    situation: dict[str, Any] = {"type": "situation", "partie": game_id}
+    situation: dict[str, Any] = {"partie": game_id}
 
     print("------------- SITUATION -------------")
     if moi is not None and moi.hand is not None:
@@ -261,7 +240,7 @@ def afficher_situation(game: Game, game_id: str) -> None:
             "partie_finie": game.finished,
         }
     )
-    ecrire_log(situation)
+    ecrire_situation(situation)
 
 
 @app.post("/play")
