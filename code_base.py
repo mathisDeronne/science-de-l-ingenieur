@@ -241,7 +241,6 @@ PRIORITE_ACHAT = [
     "woodcutter",
     "silver",
     "estate",
-    "copper",
 ]
 
 
