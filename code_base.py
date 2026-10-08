@@ -187,19 +187,27 @@ def start_turn(game_id: GameIdDependency) -> DopynionResponseStr:
     return DopynionResponseStr(game_id=game_id, decision="OK")
 
 
-def afficher_situation(game: Game) -> None:
-    """Affiche un resume lisible de la partie : ma main, mon argent, les scores, la reserve."""
+def afficher_situation(game: Game, game_id: str) -> None:
+    """Affiche un resume de la partie (main, argent, achats possibles, scores, reserve)
+    dans la console ET l'enregistre dans logs.json."""
     # Mon joueur : celui dont on connait la main (sinon, on cherche par le nom)
     moi = next((p for p in game.players if p.hand is not None), None)
     if moi is None:
         moi = next((p for p in game.players if p.name == NOM_JOUEUR), None)
+
+    situation: dict[str, Any] = {"type": "situation", "partie": game_id}
 
     print("------------- SITUATION -------------")
     if moi is not None and moi.hand is not None:
         main = moi.hand.quantities
         nb_cartes = sum(main.values())
         argent = sum(Card.class_(c).money * n for c, n in main.items())
-        actions = [c for c in main if Card.class_(c).is_action]
+        actions = [c.value for c in main if Card.class_(c).is_action]
+        achetables = [
+            c.value
+            for c, n in game.stock.quantities.items()
+            if n > 0 and Card.class_(c).cost <= argent
+        ]
 
         print(f"Joueur        : {moi.name} (score {moi.score})")
         print(f"Cartes en main: {nb_cartes}")
@@ -207,15 +215,31 @@ def afficher_situation(game: Game) -> None:
             infos = Card.class_(carte)
             print(f"   - {n} x {carte.value:<15} (argent {infos.money}, coût {infos.cost})")
         print(f"Argent dispo  : {argent}")
-        print(f"Cartes action : {[c.value for c in actions] or 'aucune'}")
-        achetables = [
-            c.value
-            for c, n in game.stock.quantities.items()
-            if n > 0 and Card.class_(c).cost <= argent
-        ]
+        print(f"Cartes action : {actions or 'aucune'}")
         print(f"Je peux acheter : {achetables or 'rien'}")
+
+        situation.update(
+            {
+                "joueur": moi.name,
+                "score": moi.score,
+                "nb_cartes_en_main": nb_cartes,
+                "main": [
+                    {
+                        "carte": carte.value,
+                        "quantite": n,
+                        "argent": Card.class_(carte).money,
+                        "cout": Card.class_(carte).cost,
+                    }
+                    for carte, n in main.items()
+                ],
+                "argent_dispo": argent,
+                "cartes_action": actions,
+                "achetables": achetables,
+            }
+        )
     else:
         print("Ma main n'a pas été trouvée dans la trame.")
+        situation["main"] = None
 
     print("Scores        :")
     for p in game.players:
@@ -227,10 +251,22 @@ def afficher_situation(game: Game) -> None:
     print(f"Partie finie  : {game.finished}")
     print("-------------------------------------", flush=True)
 
+    situation.update(
+        {
+            "scores": {p.name: p.score for p in game.players},
+            "reserve": {
+                carte.value: {"quantite": n, "cout": Card.class_(carte).cost}
+                for carte, n in game.stock.quantities.items()
+            },
+            "partie_finie": game.finished,
+        }
+    )
+    ecrire_log(situation)
+
 
 @app.post("/play")
 def play(game: Game, game_id: GameIdDependency) -> DopynionResponseStr:
-    afficher_situation(game)
+    afficher_situation(game, game_id)
 
     # Premier appel du tour : on achete un copper
     if not achat_fait.get(game_id, False):
