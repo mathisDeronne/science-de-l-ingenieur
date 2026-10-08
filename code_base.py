@@ -1,7 +1,11 @@
 import html
+import json
+import threading
+from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
+from dopynion.cards import Card
 from dopynion.data_model import (
     CardName,
     CardNameAndHand,
@@ -15,6 +19,72 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 app = FastAPI()
+
+#####################################################
+# Logs : console + fichier logs.json (meme dossier que ce fichier)
+#####################################################
+
+FICHIER_LOGS = Path(__file__).resolve().parent / "logs.json"
+_verrou_logs = threading.Lock()  # evite que deux requetes ecrivent en meme temps
+
+
+def ecrire_log(entree: dict[str, Any]) -> None:
+    """Ajoute une entree a la liste JSON du fichier logs.json."""
+    entree = {"horodatage": datetime.now().isoformat(timespec="seconds"), **entree}
+    with _verrou_logs:
+        try:
+            logs = json.loads(FICHIER_LOGS.read_text(encoding="utf-8"))
+            if not isinstance(logs, list):
+                logs = []
+        except (FileNotFoundError, ValueError):
+            logs = []
+        logs.append(entree)
+        FICHIER_LOGS.write_text(
+            json.dumps(logs, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    body = await request.body()
+    contenu: Any
+    if body:
+        try:
+            contenu = json.loads(body)
+        except ValueError:
+            contenu = body.decode("utf-8", errors="replace")
+    else:
+        contenu = None
+
+    game_id = request.headers.get("x-game-id")
+    affichage = (
+        json.dumps(contenu, indent=2, ensure_ascii=False)
+        if contenu is not None
+        else "(pas de contenu)"
+    )
+    print(
+        f"\n>>> {request.method} {request.url.path} | partie={game_id}\n{affichage}",
+        flush=True,
+    )
+    ecrire_log(
+        {
+            "type": "requete",
+            "methode": request.method,
+            "route": request.url.path,
+            "partie": game_id,
+            "contenu": contenu,
+        }
+    )
+    return await call_next(request)
+
+
+def log_decision(game_id: str, route: str, decision: Any) -> None:
+    """Affiche et enregistre la decision renvoyee au serveur."""
+    print(f">>> Décision ({route}) : {decision}", flush=True)
+    ecrire_log(
+        {"type": "decision", "route": route, "partie": game_id, "decision": decision}
+    )
+
 
 #####################################################
 # Data model for responses
@@ -56,6 +126,9 @@ GameIdDependency = Annotated[str, Depends(get_game_id)]
 @app.exception_handler(Exception)
 def unknown_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
     print(exc.__class__.__name__, str(exc))
+    ecrire_log(
+        {"type": "erreur", "nom": exc.__class__.__name__, "detail": str(exc)}
+    )
     return JSONResponse(
         status_code=500,
         content={
@@ -91,37 +164,89 @@ def root() -> str:
 # The code of the strategy
 #####################################################
 
+NOM_JOUEUR = "Le 4ème Empire"
+
+# Memorise, pour chaque partie, si on a deja achete pendant le tour en cours
+achat_fait: dict[str, bool] = {}
+
 
 @app.get("/name")
 def name() -> str:
-    return "Le 4ème Empire"
+    return NOM_JOUEUR
 
 
 @app.get("/start_game")
 def start_game(game_id: GameIdDependency) -> DopynionResponseStr:
+    achat_fait[game_id] = False
     return DopynionResponseStr(game_id=game_id, decision="OK")
 
 
 @app.get("/start_turn")
 def start_turn(game_id: GameIdDependency) -> DopynionResponseStr:
+    achat_fait[game_id] = False  # nouveau tour : on n'a encore rien achete
     return DopynionResponseStr(game_id=game_id, decision="OK")
 
 
+def afficher_situation(game: Game) -> None:
+    """Affiche un resume lisible de la partie : ma main, mon argent, les scores, la reserve."""
+    # Mon joueur : celui dont on connait la main (sinon, on cherche par le nom)
+    moi = next((p for p in game.players if p.hand is not None), None)
+    if moi is None:
+        moi = next((p for p in game.players if p.name == NOM_JOUEUR), None)
+
+    print("------------- SITUATION -------------")
+    if moi is not None and moi.hand is not None:
+        main = moi.hand.quantities
+        nb_cartes = sum(main.values())
+        argent = sum(Card.class_(c).money * n for c, n in main.items())
+        actions = [c for c in main if Card.class_(c).is_action]
+
+        print(f"Joueur        : {moi.name} (score {moi.score})")
+        print(f"Cartes en main: {nb_cartes}")
+        for carte, n in main.items():
+            infos = Card.class_(carte)
+            print(f"   - {n} x {carte.value:<15} (argent {infos.money}, coût {infos.cost})")
+        print(f"Argent dispo  : {argent}")
+        print(f"Cartes action : {[c.value for c in actions] or 'aucune'}")
+        achetables = [
+            c.value
+            for c, n in game.stock.quantities.items()
+            if n > 0 and Card.class_(c).cost <= argent
+        ]
+        print(f"Je peux acheter : {achetables or 'rien'}")
+    else:
+        print("Ma main n'a pas été trouvée dans la trame.")
+
+    print("Scores        :")
+    for p in game.players:
+        print(f"   - {p.name:<20} {p.score}")
+
+    print("Réserve (stock):")
+    for carte, n in game.stock.quantities.items():
+        print(f"   - {carte.value:<15} x{n:<3} (coût {Card.class_(carte).cost})")
+    print(f"Partie finie  : {game.finished}")
+    print("-------------------------------------", flush=True)
+
+
 @app.post("/play")
-<<<<<<< HEAD
 def play(game: Game, game_id: GameIdDependency) -> DopynionResponseStr:
-    print(f"\n==== PLAY (partie {game_id}) ====")
-    print(f"Trame reçue :\n{game.model_dump_json(indent=2)}", flush=True)
-=======
-def play(_game: Game, game_id: GameIdDependency) -> DopynionResponseStr:
-    print("\n==== PLAY ====\n")
-    print(_game.model_dump().keys())
->>>>>>> 6a930a3f2e427c275ea8eb1931f7182d520a48c7
-    return DopynionResponseStr(game_id=game_id, decision="END_TURN")
+    afficher_situation(game)
+
+    # Premier appel du tour : on achete un copper
+    if not achat_fait.get(game_id, False):
+        achat_fait[game_id] = True
+        decision = "BUY copper"
+    else:
+        # Achat deja fait : on termine le tour
+        decision = "END_TURN"
+
+    log_decision(game_id, "/play", decision)
+    return DopynionResponseStr(game_id=game_id, decision=decision)
 
 
 @app.get("/end_game")
 def end_game(game_id: GameIdDependency) -> DopynionResponseStr:
+    achat_fait.pop(game_id, None)  # on libere la memoire de cette partie
     return DopynionResponseStr(game_id=game_id, decision="OK")
 
 
