@@ -93,4 +93,8 @@ Aucune action avec responsable et échéance n'est explicitement décidée dans 
 
 ---
 
+<<<<<<< HEAD
 *Document établi à partir des notes « Jour2_aprem.md » et de la transcription « Réunion client aprèm jour 2.txt ». Les libellés incertains de la transcription sont signalés.*
+=======
+*Document établi à partir des notes « Jour2_aprem.md » et de la transcription « Réunion client aprèm jour 2.txt ». Les libellés incertains de la transcription sont signalés.*
+>>>>>>> refs/remotes/origin/main
