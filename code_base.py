@@ -38,7 +38,11 @@ def ecrire_situation(situation: dict[str, Any]) -> None:
 
     with _verrou_logs:
         FICHIER_LOGS.write_text(
-            json.dumps(situation, indent=2, ensure_ascii=False),
+            json.dumps(
+                situation,
+                indent=2,
+                ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
 
@@ -51,30 +55,43 @@ async def log_requests(request: Request, call_next):
         try:
             contenu = json.loads(body)
         except ValueError:
-            contenu = body.decode("utf-8", errors="replace")
+            contenu = body.decode(
+                "utf-8",
+                errors="replace",
+            )
     else:
         contenu = None
 
     game_id = request.headers.get("x-game-id")
 
     affichage = (
-        json.dumps(contenu, indent=2, ensure_ascii=False)
+        json.dumps(
+            contenu,
+            indent=2,
+            ensure_ascii=False,
+        )
         if contenu is not None
         else "(pas de contenu)"
     )
 
     print(
-        f"\n>>> {request.method} {request.url.path} | partie={game_id}\n{affichage}",
+        f"\n>>> {request.method} {request.url.path} "
+        f"| partie={game_id}\n{affichage}",
         flush=True,
     )
 
     return await call_next(request)
 
 
-def log_decision(game_id: str, route: str, decision: Any) -> None:
+def log_decision(
+    game_id: str,
+    route: str,
+    decision: Any,
+) -> None:
     """Affiche la decision envoyee a l'arbitre."""
     print(
-        f">>> Décision ({route}) partie={game_id} : {decision}",
+        f">>> Décision ({route}) "
+        f"partie={game_id} : {decision}",
         flush=True,
     )
 
@@ -105,12 +122,17 @@ class DopynionResponseStr(BaseModel):
 
 
 def get_game_id(
-    x_game_id: str = Header(description="ID of the game"),
+    x_game_id: str = Header(
+        description="ID of the game"
+    ),
 ) -> str:
     return x_game_id
 
 
-GameIdDependency = Annotated[str, Depends(get_game_id)]
+GameIdDependency = Annotated[
+    str,
+    Depends(get_game_id),
+]
 
 
 #####################################################
@@ -124,7 +146,10 @@ def unknown_exception_handler(
     exc: Exception,
 ) -> JSONResponse:
 
-    print(exc.__class__.__name__, str(exc))
+    print(
+        exc.__class__.__name__,
+        str(exc),
+    )
 
     return JSONResponse(
         status_code=500,
@@ -141,8 +166,12 @@ def unknown_exception_handler(
 #####################################################
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get(
+    "/",
+    response_class=HTMLResponse,
+)
 def root() -> str:
+
     header = (
         "<html><head><title>Dopynion template</title></head><body>"
         "<h1>Dopynion documentation</h1>"
@@ -157,7 +186,11 @@ def root() -> str:
 
     return (
         header
-        + html.escape(Path(__file__).read_text(encoding="utf-8"))
+        + html.escape(
+            Path(__file__).read_text(
+                encoding="utf-8"
+            )
+        )
         + footer
     )
 
@@ -173,9 +206,11 @@ NOM_JOUEUR = "Le 4ème Empire"
 # Effets des cartes Action
 #####################################################
 
-# Les +Cartes sont geres directement par l'arbitre.
-# On memorise seulement les informations que l'arbitre
-# ne nous renvoie pas : Actions, Achats et pieces bonus.
+# L'arbitre gere lui-meme les cartes piochees.
+# Nous memorisons uniquement :
+# - Actions
+# - Achats
+# - pieces bonus
 
 EFFETS_ACTIONS = {
     "festival": {
@@ -183,26 +218,31 @@ EFFETS_ACTIONS = {
         "achats": 1,
         "pieces": 2,
     },
+
     "smithy": {
         "actions": 0,
         "achats": 0,
         "pieces": 0,
     },
+
     "laboratory": {
         "actions": 1,
         "achats": 0,
         "pieces": 0,
     },
+
     "village": {
         "actions": 2,
         "achats": 0,
         "pieces": 0,
     },
+
     "woodcutter": {
         "actions": 0,
         "achats": 1,
         "pieces": 2,
     },
+
     "market": {
         "actions": 1,
         "achats": 1,
@@ -212,12 +252,35 @@ EFFETS_ACTIONS = {
 
 
 #####################################################
+# Limites des cartes Action
+#####################################################
+
+# Evite de remplir le deck de cartes Action.
+#
+# Le Royaume gagnait avec relativement peu de cartes
+# moteur et beaucoup de Tresors / Provinces.
+
+MAX_CARTES_ACTION = {
+    "laboratory": 3,
+    "smithy": 2,
+    "festival": 1,
+    "market": 1,
+    "village": 1,
+    "woodcutter": 0,
+}
+
+# Meme si les limites individuelles permettraient
+# davantage, on ne veut pas depasser ce total.
+MAX_TOTAL_ACTIONS = 5
+
+
+#####################################################
 # Ordre de jeu des cartes Action
 #####################################################
 
 PRIORITE_ACTION = [
-    "village",
     "laboratory",
+    "village",
     "market",
     "festival",
     "smithy",
@@ -226,21 +289,49 @@ PRIORITE_ACTION = [
 
 
 #####################################################
-# Ordre de priorite des achats
+# Priorites d'achat selon le moment de la partie
 #####################################################
 
-PRIORITE_ACHAT = [
+# Debut : construire un PETIT moteur.
+PRIORITE_ACHAT_DEBUT = [
     "province",
     "gold",
-    "festival",
     "laboratory",
-    "market",
-    "duchy",
     "smithy",
+    "festival",
+    "market",
+    "silver",
     "village",
-    "woodcutter",
+]
+
+# Milieu : economie avant nouvelles cartes Action.
+PRIORITE_ACHAT_MILIEU = [
+    "province",
+    "gold",
+    "laboratory",
+    "silver",
+    "smithy",
+    "festival",
+    "market",
+    "village",
+]
+
+# Fin : convertir l'argent en points.
+PRIORITE_ACHAT_FIN = [
+    "province",
+    "duchy",
+    "gold",
     "silver",
     "estate",
+]
+
+# Toute fin : les petits points deviennent importants.
+PRIORITE_ACHAT_FIN_URGENTE = [
+    "province",
+    "duchy",
+    "estate",
+    "gold",
+    "silver",
 ]
 
 
@@ -248,25 +339,46 @@ PRIORITE_ACHAT = [
 # Etat local de chaque partie
 #####################################################
 
-# L'arbitre ne renvoie pas le nombre d'Actions ou d'Achats
-# restants. On doit donc les memoriser nous-memes par game_id.
+# L'arbitre ne nous renvoie pas :
+# - Actions restantes
+# - Achats restants
+# - bonus de pieces
+# - argent restant apres plusieurs achats
+#
+# Ces informations sont donc stockees par game_id.
 
 etat_tours: dict[str, dict[str, Any]] = {}
 
 
-def nouvel_etat_tour() -> dict[str, Any]:
-    """Etat initial d'un nouveau tour."""
+def nouvel_etat_partie() -> dict[str, Any]:
+    """Etat au debut d'une nouvelle partie."""
     return {
+        "tour": 0,
+
         "actions_restantes": 1,
         "achats_restants": 1,
-        "bonus_pieces": 0,
 
-        # None tant que la phase achat n'a pas commence.
+        "bonus_pieces": 0,
         "argent_restant": None,
 
-        # Une fois True, on ne joue plus de carte Action.
         "phase_achat": False,
+
+        # Permet de savoir combien de cartes de chaque
+        # type notre bot a achetees pendant cette partie.
+        "cartes_achetees": {},
     }
+
+
+def reinitialiser_tour(
+    etat: dict[str, Any],
+) -> None:
+    """Reinitialise uniquement les informations du tour."""
+
+    etat["actions_restantes"] = 1
+    etat["achats_restants"] = 1
+    etat["bonus_pieces"] = 0
+    etat["argent_restant"] = None
+    etat["phase_achat"] = False
 
 
 #####################################################
@@ -284,7 +396,7 @@ def start_game(
     game_id: GameIdDependency,
 ) -> DopynionResponseStr:
 
-    etat_tours[game_id] = nouvel_etat_tour()
+    etat_tours[game_id] = nouvel_etat_partie()
 
     return DopynionResponseStr(
         game_id=game_id,
@@ -297,12 +409,20 @@ def start_turn(
     game_id: GameIdDependency,
 ) -> DopynionResponseStr:
 
-    # Chaque tour commence avec 1 Action et 1 Achat.
-    etat_tours[game_id] = nouvel_etat_tour()
+    etat = etat_tours.setdefault(
+        game_id,
+        nouvel_etat_partie(),
+    )
+
+    etat["tour"] += 1
+
+    reinitialiser_tour(etat)
 
     print(
-        f">>> Nouveau tour | partie={game_id} | "
-        f"Actions=1 | Achats=1",
+        f">>> Nouveau tour {etat['tour']} "
+        f"| partie={game_id} "
+        f"| Actions=1 "
+        f"| Achats=1",
         flush=True,
     )
 
@@ -318,29 +438,34 @@ def start_turn(
 
 
 def trouver_mon_joueur(game: Game):
-    """Trouve notre joueur grâce à la main visible."""
+    """Trouve notre joueur grace a la main visible."""
 
     moi = next(
-        (p for p in game.players if p.hand is not None),
+        (
+            p
+            for p in game.players
+            if p.hand is not None
+        ),
         None,
     )
 
     if moi is None:
         moi = next(
-            (p for p in game.players if p.name == NOM_JOUEUR),
+            (
+                p
+                for p in game.players
+                if p.name == NOM_JOUEUR
+            ),
             None,
         )
 
     return moi
 
 
-def calculer_argent_main(game: Game) -> int:
-    """
-    Calcule l'argent fourni par les cartes Tresor.
-
-    Les bonus de Festival, Market et Woodcutter sont
-    ajoutes separement uniquement apres avoir joue la carte.
-    """
+def calculer_argent_main(
+    game: Game,
+) -> int:
+    """Calcule l'argent provenant des cartes Tresor."""
 
     moi = trouver_mon_joueur(game)
 
@@ -350,14 +475,103 @@ def calculer_argent_main(game: Game) -> int:
     argent = 0
 
     for carte, quantite in moi.hand.quantities.items():
+
         infos = Card.class_(carte)
 
-        # On ne compte pas automatiquement l'argent
-        # des cartes Action.
+        # Les cartes Action ne donnent leurs pieces
+        # que lorsqu'elles sont reellement jouees.
         if not infos.is_action:
-            argent += infos.money * quantite
+            argent += (
+                infos.money
+                * quantite
+            )
 
     return argent
+
+
+def nombre_carte_achetee(
+    game_id: str,
+    nom: str,
+) -> int:
+    """Nombre d'exemplaires achetes de cette carte."""
+
+    etat = etat_tours[game_id]
+
+    return etat["cartes_achetees"].get(
+        nom,
+        0,
+    )
+
+
+def nombre_total_actions_achetees(
+    game_id: str,
+) -> int:
+    """Nombre total de cartes Action achetees."""
+
+    etat = etat_tours[game_id]
+
+    total = 0
+
+    for nom in EFFETS_ACTIONS:
+        total += etat["cartes_achetees"].get(
+            nom,
+            0,
+        )
+
+    return total
+
+
+def enregistrer_achat(
+    game_id: str,
+    carte: CardName,
+) -> None:
+    """Memorise localement une carte achetee."""
+
+    etat = etat_tours[game_id]
+
+    nom = carte.value.lower()
+
+    etat["cartes_achetees"][nom] = (
+        etat["cartes_achetees"].get(
+            nom,
+            0,
+        )
+        + 1
+    )
+
+
+def carte_action_autorisee(
+    game_id: str,
+    nom: str,
+) -> bool:
+    """
+    Verifie si nous pouvons encore acheter
+    cette carte Action.
+    """
+
+    if nom not in EFFETS_ACTIONS:
+        return True
+
+    limite = MAX_CARTES_ACTION.get(
+        nom,
+        0,
+    )
+
+    if limite <= 0:
+        return False
+
+    if nombre_total_actions_achetees(
+        game_id
+    ) >= MAX_TOTAL_ACTIONS:
+        return False
+
+    return (
+        nombre_carte_achetee(
+            game_id,
+            nom,
+        )
+        < limite
+    )
 
 
 #####################################################
@@ -387,13 +601,15 @@ def choisir_action(
     main = moi.hand.quantities
 
     for nom_prioritaire in PRIORITE_ACTION:
+
         for carte, quantite in main.items():
 
             if quantite <= 0:
                 continue
 
             if (
-                carte.value.lower() == nom_prioritaire
+                carte.value.lower()
+                == nom_prioritaire
                 and Card.class_(carte).is_action
             ):
                 return carte
@@ -405,7 +621,7 @@ def appliquer_effet_action(
     game_id: str,
     carte: CardName,
 ) -> None:
-    """Met a jour nos compteurs apres avoir joue une Action."""
+    """Met a jour les compteurs apres une Action."""
 
     etat = etat_tours[game_id]
 
@@ -420,25 +636,33 @@ def appliquer_effet_action(
         },
     )
 
-    # Jouer une carte Action consomme 1 Action.
+    # Jouer une Action consomme une Action.
     etat["actions_restantes"] -= 1
 
-    # Puis on applique les bonus.
-    etat["actions_restantes"] += effet["actions"]
-    etat["achats_restants"] += effet["achats"]
-    etat["bonus_pieces"] += effet["pieces"]
+    # Puis on ajoute ses bonus.
+    etat["actions_restantes"] += (
+        effet["actions"]
+    )
+
+    etat["achats_restants"] += (
+        effet["achats"]
+    )
+
+    etat["bonus_pieces"] += (
+        effet["pieces"]
+    )
 
     print(
         f">>> {carte.value} jouée | "
         f"Actions={etat['actions_restantes']} | "
         f"Achats={etat['achats_restants']} | "
-        f"Bonus pièces={etat['bonus_pieces']}",
+        f"Bonus={etat['bonus_pieces']}",
         flush=True,
     )
 
 
 #####################################################
-# Gestion de la phase Achat
+# Gestion de la phase achat
 #####################################################
 
 
@@ -446,7 +670,7 @@ def commencer_phase_achat(
     game: Game,
     game_id: str,
 ) -> None:
-    """Calcule et memorise l'argent disponible pour les achats."""
+    """Memorise le budget total disponible."""
 
     etat = etat_tours[game_id]
 
@@ -464,6 +688,7 @@ def commencer_phase_achat(
 
     print(
         f">>> Phase achat | "
+        f"Tour={etat['tour']} | "
         f"Trésors={argent_tresor} | "
         f"Bonus={etat['bonus_pieces']} | "
         f"Argent={etat['argent_restant']} | "
@@ -472,11 +697,79 @@ def commencer_phase_achat(
     )
 
 
+def provinces_restantes(
+    game: Game,
+) -> int:
+    """Retourne le nombre de Provinces restantes."""
+
+    for carte, quantite in game.stock.quantities.items():
+
+        if carte.value.lower() == "province":
+            return quantite
+
+    return 0
+
+
+def obtenir_priorite_achat(
+    game: Game,
+    game_id: str,
+) -> list[str]:
+    """
+    Change la strategie selon :
+    - le numero du tour
+    - le nombre de Provinces restantes
+    """
+
+    etat = etat_tours[game_id]
+
+    tour = etat["tour"]
+
+    provinces = provinces_restantes(game)
+
+    # Fin tres proche.
+    if provinces <= 2 or tour >= 20:
+
+        print(
+            ">>> Strategie achat : FIN URGENTE",
+            flush=True,
+        )
+
+        return PRIORITE_ACHAT_FIN_URGENTE
+
+    # Fin de partie.
+    if provinces <= 4 or tour >= 15:
+
+        print(
+            ">>> Strategie achat : FIN",
+            flush=True,
+        )
+
+        return PRIORITE_ACHAT_FIN
+
+    # Debut.
+    if tour <= 6:
+
+        print(
+            ">>> Strategie achat : DEBUT",
+            flush=True,
+        )
+
+        return PRIORITE_ACHAT_DEBUT
+
+    # Milieu.
+    print(
+        ">>> Strategie achat : MILIEU",
+        flush=True,
+    )
+
+    return PRIORITE_ACHAT_MILIEU
+
+
 def choisir_achat(
     game: Game,
     game_id: str,
 ) -> CardName | None:
-    """Choisit la meilleure carte encore achetable."""
+    """Choisit la meilleure carte actuellement achetable."""
 
     etat = etat_tours[game_id]
 
@@ -488,9 +781,15 @@ def choisir_achat(
     if argent is None:
         return None
 
+    priorite = obtenir_priorite_achat(
+        game,
+        game_id,
+    )
+
     achetables = [
         carte
-        for carte, quantite in game.stock.quantities.items()
+        for carte, quantite
+        in game.stock.quantities.items()
         if (
             quantite > 0
             and Card.class_(carte).cost <= argent
@@ -504,16 +803,37 @@ def choisir_achat(
 
     print(
         "Cartes achetables :",
-        [carte.value for carte in achetables],
+        [
+            carte.value
+            for carte in achetables
+        ],
         flush=True,
     )
 
-    for nom_prioritaire in PRIORITE_ACHAT:
+    for nom_prioritaire in priorite:
+
         for carte in achetables:
 
-            if carte.value.lower() == nom_prioritaire:
-                return carte
+            nom = carte.value.lower()
 
+            if nom != nom_prioritaire:
+                continue
+
+            # Si c'est une carte Action,
+            # on verifie les limites.
+            if Card.class_(carte).is_action:
+
+                if not carte_action_autorisee(
+                    game_id,
+                    nom,
+                ):
+                    continue
+
+            return carte
+
+    # Rien d'interessant :
+    # on prefere terminer le tour plutot que
+    # d'acheter un Copper inutile.
     return None
 
 
@@ -531,11 +851,12 @@ def afficher_situation(
 
     etat = etat_tours.setdefault(
         game_id,
-        nouvel_etat_tour(),
+        nouvel_etat_partie(),
     )
 
     situation: dict[str, Any] = {
         "partie": game_id,
+        "tour": etat["tour"],
     }
 
     print("------------- SITUATION -------------")
@@ -543,19 +864,27 @@ def afficher_situation(
     if moi is not None and moi.hand is not None:
 
         main = moi.hand.quantities
-        nb_cartes = sum(main.values())
 
-        argent_tresor = calculer_argent_main(game)
+        nb_cartes = sum(
+            main.values()
+        )
 
-        # Pendant la phase Action, on affiche l'argent
-        # potentiel avec les bonus deja obtenus.
+        argent_tresor = calculer_argent_main(
+            game
+        )
+
         if etat["argent_restant"] is None:
+
             argent_dispo = (
                 argent_tresor
                 + etat["bonus_pieces"]
             )
+
         else:
-            argent_dispo = etat["argent_restant"]
+
+            argent_dispo = (
+                etat["argent_restant"]
+            )
 
         actions = [
             carte.value
@@ -565,38 +894,88 @@ def afficher_situation(
 
         achetables = [
             carte.value
-            for carte, quantite in game.stock.quantities.items()
+            for carte, quantite
+            in game.stock.quantities.items()
             if (
                 quantite > 0
-                and Card.class_(carte).cost <= argent_dispo
+                and Card.class_(carte).cost
+                <= argent_dispo
                 and etat["achats_restants"] > 0
             )
         ]
 
-        print(f"Joueur        : {moi.name} (score {moi.score})")
-        print(f"Cartes en main: {nb_cartes}")
+        print(
+            f"Tour          : {etat['tour']}"
+        )
+
+        print(
+            f"Joueur        : {moi.name} "
+            f"(score {moi.score})"
+        )
+
+        print(
+            f"Cartes en main: {nb_cartes}"
+        )
 
         for carte, quantite in main.items():
+
             infos = Card.class_(carte)
 
             print(
-                f"   - {quantite} x {carte.value:<15} "
-                f"(argent {infos.money}, coût {infos.cost})"
+                f"   - {quantite} x "
+                f"{carte.value:<15} "
+                f"(argent {infos.money}, "
+                f"coût {infos.cost})"
             )
 
-        print(f"Argent trésor : {argent_tresor}")
-        print(f"Bonus pièces  : {etat['bonus_pieces']}")
-        print(f"Argent dispo  : {argent_dispo}")
-        print(f"Actions dispo : {etat['actions_restantes']}")
-        print(f"Achats dispo  : {etat['achats_restants']}")
-        print(f"Phase achat   : {etat['phase_achat']}")
-        print(f"Cartes action : {actions or 'aucune'}")
-        print(f"Je peux acheter : {achetables or 'rien'}")
+        print(
+            f"Argent trésor : {argent_tresor}"
+        )
+
+        print(
+            f"Bonus pièces  : "
+            f"{etat['bonus_pieces']}"
+        )
+
+        print(
+            f"Argent dispo  : {argent_dispo}"
+        )
+
+        print(
+            f"Actions dispo : "
+            f"{etat['actions_restantes']}"
+        )
+
+        print(
+            f"Achats dispo  : "
+            f"{etat['achats_restants']}"
+        )
+
+        print(
+            f"Phase achat   : "
+            f"{etat['phase_achat']}"
+        )
+
+        print(
+            f"Cartes action : "
+            f"{actions or 'aucune'}"
+        )
+
+        print(
+            f"Je peux acheter : "
+            f"{achetables or 'rien'}"
+        )
+
+        print(
+            "Cartes achetées : "
+            f"{etat['cartes_achetees']}"
+        )
 
         situation.update(
             {
                 "joueur": moi.name,
                 "score": moi.score,
+
                 "nb_cartes_en_main": nb_cartes,
 
                 "main": [
@@ -606,7 +985,8 @@ def afficher_situation(
                         "argent": Card.class_(carte).money,
                         "cout": Card.class_(carte).cost,
                     }
-                    for carte, quantite in main.items()
+                    for carte, quantite
+                    in main.items()
                 ],
 
                 "argent_tresor": argent_tresor,
@@ -614,37 +994,64 @@ def afficher_situation(
                 "argent_dispo": argent_dispo,
                 "argent_restant": etat["argent_restant"],
 
-                "actions_restantes": etat["actions_restantes"],
-                "achats_restants": etat["achats_restants"],
-                "phase_achat": etat["phase_achat"],
+                "actions_restantes":
+                    etat["actions_restantes"],
 
-                "cartes_action": actions,
-                "achetables": achetables,
+                "achats_restants":
+                    etat["achats_restants"],
+
+                "phase_achat":
+                    etat["phase_achat"],
+
+                "cartes_action":
+                    actions,
+
+                "cartes_achetees":
+                    etat["cartes_achetees"],
+
+                "achetables":
+                    achetables,
+
+                "provinces_restantes":
+                    provinces_restantes(game),
             }
         )
 
     else:
-        print("Ma main n'a pas été trouvée dans la trame.")
+
+        print(
+            "Ma main n'a pas été trouvée dans la trame."
+        )
+
         situation["main"] = None
 
     print("Scores        :")
 
     for joueur in game.players:
+
         print(
-            f"   - {joueur.name:<20} {joueur.score}"
+            f"   - {joueur.name:<20} "
+            f"{joueur.score}"
         )
 
     print("Réserve (stock):")
 
     for carte, quantite in game.stock.quantities.items():
+
         print(
             f"   - {carte.value:<15} "
             f"x{quantite:<3} "
             f"(coût {Card.class_(carte).cost})"
         )
 
-    print(f"Partie finie  : {game.finished}")
-    print("-------------------------------------", flush=True)
+    print(
+        f"Partie finie  : {game.finished}"
+    )
+
+    print(
+        "-------------------------------------",
+        flush=True,
+    )
 
     situation.update(
         {
@@ -658,14 +1065,18 @@ def afficher_situation(
                     "quantite": quantite,
                     "cout": Card.class_(carte).cost,
                 }
-                for carte, quantite in game.stock.quantities.items()
+                for carte, quantite
+                in game.stock.quantities.items()
             },
 
-            "partie_finie": game.finished,
+            "partie_finie":
+                game.finished,
         }
     )
 
-    ecrire_situation(situation)
+    ecrire_situation(
+        situation
+    )
 
 
 #####################################################
@@ -681,7 +1092,7 @@ def play(
 
     etat = etat_tours.setdefault(
         game_id,
-        nouvel_etat_tour(),
+        nouvel_etat_partie(),
     )
 
     afficher_situation(
@@ -689,8 +1100,9 @@ def play(
         game_id,
     )
 
-    # Si la partie est terminee, on ne fait plus rien.
+    # Partie terminee.
     if game.finished:
+
         decision = "END_TURN"
 
         log_decision(
@@ -726,11 +1138,10 @@ def play(
                 carte_action,
             )
 
-            # Commande annoncee pendant la reunion.
-            decision = f"ACTION {carte_action.value}"
-
-            # Si l'arbitre utilise PLAY à la place :
-            # decision = f"PLAY {carte_action.value}"
+            # Commande annoncee par l'arbitre.
+            decision = (
+                f"ACTION {carte_action.value}"
+            )
 
             log_decision(
                 game_id,
@@ -743,8 +1154,7 @@ def play(
                 decision=decision,
             )
 
-        # Aucune carte Action a jouer :
-        # on passe aux achats.
+        # Plus de carte Action interessante.
         commencer_phase_achat(
             game,
             game_id,
@@ -752,7 +1162,6 @@ def play(
 
     elif not etat["phase_achat"]:
 
-        # Plus aucune Action disponible.
         commencer_phase_achat(
             game,
             game_id,
@@ -772,21 +1181,33 @@ def play(
 
         if carte_choisie is not None:
 
-            cout = Card.class_(carte_choisie).cost
+            cout = Card.class_(
+                carte_choisie
+            ).cost
 
-            # L'argent doit etre conserve localement car
-            # l'arbitre retire les Tresors de la main.
+            # L'arbitre retire les Tresors de la main
+            # apres le premier achat, donc nous conservons
+            # localement l'argent restant.
             etat["argent_restant"] -= cout
 
-            # Un BUY consomme un achat.
             etat["achats_restants"] -= 1
 
-            decision = f"BUY {carte_choisie.value}"
+            enregistrer_achat(
+                game_id,
+                carte_choisie,
+            )
+
+            decision = (
+                f"BUY {carte_choisie.value}"
+            )
 
             print(
-                f">>> Achat {carte_choisie.value} | "
-                f"Argent restant={etat['argent_restant']} | "
-                f"Achats restants={etat['achats_restants']}",
+                f">>> Achat "
+                f"{carte_choisie.value} | "
+                f"Argent restant="
+                f"{etat['argent_restant']} | "
+                f"Achats restants="
+                f"{etat['achats_restants']}",
                 flush=True,
             )
 
@@ -830,8 +1251,10 @@ def end_game(
     game_id: GameIdDependency,
 ) -> DopynionResponseStr:
 
-    # On supprime les informations locales de la partie.
-    etat_tours.pop(game_id, None)
+    etat_tours.pop(
+        game_id,
+        None,
+    )
 
     return DopynionResponseStr(
         game_id=game_id,
