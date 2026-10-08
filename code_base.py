@@ -282,12 +282,13 @@ def choisir_achat(game: Game) -> CardName | None:
 
 
 def afficher_situation(game: Game) -> None:
-    """
-    Affiche un résumé lisible de la partie :
-    main, argent, scores et réserve.
-    """
+    """Affiche un resume lisible de la partie : ma main, mon argent, les scores, la reserve."""
+    # Mon joueur : celui dont on connait la main (sinon, on cherche par le nom)
+    moi = next((p for p in game.players if p.hand is not None), None)
+    if moi is None:
+        moi = next((p for p in game.players if p.name == NOM_JOUEUR), None)
 
-    moi = trouver_mon_joueur(game)
+    situation: dict[str, Any] = {"type": "situation", "partie": game_id}
 
     print("------------- SITUATION -------------")
 
@@ -295,17 +296,8 @@ def afficher_situation(game: Game) -> None:
         main = moi.hand.quantities
 
         nb_cartes = sum(main.values())
-
-        argent = sum(
-            Card.class_(carte).money * quantite
-            for carte, quantite in main.items()
-        )
-
-        actions = [
-            carte
-            for carte in main
-            if Card.class_(carte).is_action
-        ]
+        argent = sum(Card.class_(c).money * n for c, n in main.items())
+        actions = [c for c in main if Card.class_(c).is_action]
 
         print(f"Joueur        : {moi.name} (score {moi.score})")
         print(f"Cartes en main: {nb_cartes}")
@@ -319,25 +311,16 @@ def afficher_situation(game: Game) -> None:
             )
 
         print(f"Argent dispo  : {argent}")
-
-        print(
-            f"Cartes action : "
-            f"{[carte.value for carte in actions] or 'aucune'}"
-        )
-
+        print(f"Cartes action : {[c.value for c in actions] or 'aucune'}")
         achetables = [
-            carte.value
-            for carte, quantite in game.stock.quantities.items()
-            if quantite > 0
-            and Card.class_(carte).cost <= argent
+            c.value
+            for c, n in game.stock.quantities.items()
+            if n > 0 and Card.class_(c).cost <= argent
         ]
-
-        print(
-            f"Je peux acheter : {achetables or 'rien'}"
-        )
-
+        print(f"Je peux acheter : {achetables or 'rien'}")
     else:
         print("Ma main n'a pas été trouvée dans la trame.")
+        situation["main"] = None
 
     print("Scores        :")
 
@@ -358,13 +341,21 @@ def afficher_situation(game: Game) -> None:
     print(f"Partie finie  : {game.finished}")
     print("-------------------------------------", flush=True)
 
+    situation.update(
+        {
+            "scores": {p.name: p.score for p in game.players},
+            "reserve": {
+                carte.value: {"quantite": n, "cout": Card.class_(carte).cost}
+                for carte, n in game.stock.quantities.items()
+            },
+            "partie_finie": game.finished,
+        }
+    )
+    ecrire_log(situation)
+
 
 @app.post("/play")
-def play(
-    game: Game,
-    game_id: GameIdDependency,
-) -> DopynionResponseStr:
-
+def play(game: Game, game_id: GameIdDependency) -> DopynionResponseStr:
     afficher_situation(game)
 
     # Si aucun achat n'a encore été effectué pendant ce tour
