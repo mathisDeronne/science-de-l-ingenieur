@@ -1,13 +1,13 @@
-# Compte rendu : Cartes disponibles, API et communication avec l'arbitre
+# Compte rendu : Nom du jeu, cartes disponibles et routes de l'API
 
-- **Date** : 08/10/2026
-- **Heure de début / fin** : 9h20 / environ 9h30
-- **Lieu** : 302
-- **Enregistrement** : réunion enregistrée
+- **Date** : 07/10/2026
+- **Heure de début / fin** : 9h20 / 9h30
+- **Lieu** : Salle 302 Bordeaux Ynov Campus
+- **Enregistrement** : réunion enregistrée avec l'accord des participants
 
 ## Participants
 
-- **Présents** : Client, Guillaume, Mathis, Damien, Léo
+- **Présents** : Client, Guillaume, Mathis, Damien, (Léo et arrivé en fin de réunion)
 - **Absents** : Personne
 
 ## Ordre du jour initial
@@ -16,330 +16,93 @@ Clarifier les cartes actuellement disponibles dans le jeu ainsi que le fonctionn
 
 ## Sujets abordés
 
-### 1. Version de Dominion utilisée et cartes disponibles
+### 1. Nom du jeu
 
 **Résumé**
+- Les équipes ont proposé un nom de jeu et demandé confirmation.
+- Le jeu est **Dominion**. Il comporte quelques modifications par rapport au jeu d'origine, mais celui-ci sert de base.
 
-- Le jeu est basé sur la version **2008 de Dominion**, avec quelques modifications.
-- Cette version peut servir de référence pour connaître les cartes susceptibles d'être ajoutées.
-- Toutes les cartes de la version 2008 ne sont cependant pas forcément disponibles.
-- Certaines cartes présentes dans l'ancienne version, comme **Woodcutter**, sont actuellement implémentées.
-- L'Atelier et l'Aventurier ne semblent pas être disponibles pour le moment.
-- Actuellement, **5 cartes Action** sont présentes dans le pool.
-- À terme, le pool doit comporter **10 cartes Action**.
-- Les cartes Action citées pendant la réunion sont :
-  - Festival ;
-  - Laboratory ;
-  - Village ;
-  - Woodcutter ;
-  - Market.
+**Décision / réponse** :Confirmé Dominion.
+
+### 2. Cartes disponibles
+
+**Résumé**
+- L'équipe on comparé avec la liste de la version 2008 du jeu. Elles ont cité le Woodcutter, que l'intervenant dit avoir dans sa liste, puis l'Atelier et l'Aventurier, qu'il ne connaît pas encore.
+- La liste des cartes action actuellement disponible, citée à l'oral : festival, « spaci » (nom mal transcrit), laboratoire, village, woodcutter.
+- Trésors : cuivre, argent, or. Cartes point de victoire : Domaine, Duché, Province.
+- Les Malédictions : l'intervenant n'a pas la connaissance de cette carte pour l'instant. Il en aura plus tard.
+
+- Festival 5 ;
+- Laboratory 5 ;
+- Village 3 ;
+- Woodcutter ;
+- Market 5 ;
+
+| Nom | Valeur d'achat | Réponse attendue |
+|---|---|---|
+|Village|3|+1 Card, +2 Actions|
+|Woodcutter|3|+1 Buy, +2$|
+|smithy|4|+3 Cards|
+|Market|5|+1 Card, +1 Action, +1 Buy, +1$|
+|Festival|5|+2 Actions, +1 Buy, +2$|
+|Laboratory|5|+2 Cards, +1 Action|
+
 - Les cartes Trésor disponibles sont :
-  - Copper ;
-  - Silver ;
-  - Gold.
+
+| Nom | Valeur d'achat | Effet |
+|---|---|---|
+|Copper|0|1$|
+|Silver|3|2$|
+|Gold|6|3$|
+
 - Les trois niveaux classiques de cartes Victoire sont également présents :
-  - Estate ;
-  - Duchy ;
-  - Province.
-- Les cartes Curse ne sont pas encore présentes, mais devraient être ajoutées ultérieurement.
+
+| Nom | Valeur d'achat | Effet |
+|---|---|---|
+|Estate|2|1 Valeur|
+|Duchy|5|3 Valeur|
+|Province|8|6 Valeur|
 
 **Décision / réponse**
+- Pour les premiers jours, 5 cartes action sont dans le pool, pour mettre en place les mécaniques et stratégies sur un jeu simple.
 
-- La liste complète des cartes qui seront utilisées ne sera pas communiquée immédiatement.
-- La version 2008 de Dominion peut être utilisée comme référence pour identifier les cartes.
-- Pour les premiers jours, le jeu reste volontairement simple afin de permettre aux équipes de mettre en place leur système de stratégie.
-
-**Actions**
-
-- Identifier les cartes réellement présentes dans la réserve à partir de l'état du jeu envoyé par le serveur.
-- Rechercher ensuite les effets des cartes identifiées.
-- Préparer progressivement une stratégie capable de prendre en compte les nouvelles cartes ajoutées au jeu.
-
----
-
-### 2. Communication avec l'arbitre et identifiant de partie
+### 3. Routes de l'API HTTP
 
 **Résumé**
+- La plupart des routes, sauf la route `/name`, reçoivent un identifiant de partie que la stratégie doit mémoriser et renvoyer à l'arbitre. ?????
+- Les parties se jouent actuellement à tour de rôle. Elles seront bientôt simultanées : il faut donc stocker les informations par partie, et non de façon globale.
+- L'intervenant rappelle qu'il faut livrer au plus tôt ce soir une stratégie meilleure que celle des autres.
+
+**Décision / réponse : routes décrites**
+
+| Route | Rôle | Réponse attendue |
+|---|---|---|
+| `/name` (GET) | L'arbitre demande le nom de l'équipe. Il apparaît dans les logs des parties. | Le nom de l'équipe, sous forme de chaîne de caractères. Il faut remplacer le nom par défaut. |
+| `StartGame` | Marque le début d'une partie. Reçoit notamment l'identifiant de partie, utilisable pour initialiser un espace de stockage dédié. | Objet JSON avec la propriété `decision` valant `OK`. |
+| `StartTurn` | Marque le début d'un tour. | Objet JSON avec la propriété `decision` valant `OK`. |
+| `Play` (POST) | Route principale. L'arbitre envoie l'état du jeu. | Objet JSON avec une propriété `decision`, voir ci-dessous. |
+
+**Valeurs de `decision` pour `Play`** (texte en majuscules)
+- `END_TURN` : plus aucune action à faire ce tour.
+- `BUY <nom de la carte>` : acheter une carte. Le nom est celui de la carte telle qu'envoyée par le serveur.
+- `ACTION <nom de la carte>` : jouer une carte action de sa main.
+
+**Règles d'achat**
+- Il n'a pas besoin de précisier quelles cartes servent à payer : l'arbitre dépense automatiquement la monnaie de la main.
+- L'arbitre prend en compte la monnaie totale disponible pendant la phase d'achat, y compris les bonus des cartes action. Les dépenses peuvent se répartir sur plusieurs achats.
+- Acheter une carte trop chère ou qui n'a pas de stock est une action invalide : le joueur est éjecté de la partie.
+
+**État du jeu reçu par `Play`** (JSON)
+- `finish` : booléen sans utilité (indique que la partie n'est pas finie).
+- `players` : liste d'informations sur les joueurs. Seule la propriété `name` a été citée avant la fin de l'enregistrement.
+- `stock` : quantité de cartes restantes dans la réserve.
+- Les points des autres joueurs ne sont pas visibles.
 
-- La communication entre le bot et l'arbitre utilise une **API HTTP**.
-- L'arbitre fournit un **identifiant de partie**.
-- Cet identifiant doit être renvoyé dans la réponse du bot.
-- Actuellement, les parties sont principalement exécutées les unes après les autres.
-- À terme, plusieurs parties seront jouées **simultanément**.
-- Le bot devra donc être capable de conserver un état différent pour chaque partie.
-- Les informations mémorisées ne doivent pas être stockées comme si une seule partie existait.
-
-**Décision / réponse**
-
-- L'identifiant de partie doit être utilisé comme clé pour différencier les différents états de jeu.
-- Le bot devra pouvoir prendre une décision en fonction de la partie concernée sans mélanger les informations provenant de plusieurs parties.
-
-**Actions**
-
-- Prévoir dès maintenant un stockage séparé des informations pour chaque `game_id`.
-- Éviter les variables globales représentant l'état d'une seule partie.
-- Préparer le bot à gérer plusieurs parties simultanément.
-
-Exemple de structure possible :
-
-```python
-games = {
-    "game_id_1": {...},
-    "game_id_2": {...},
-}
-```
-
----
-
-### 3. Tram `/name`
-
-**Résumé**
-
-- L'arbitre appelle une tram HTTP GET `/name`.
-- Le serveur du bot doit répondre avec le nom de l'équipe sous forme de chaîne de caractères.
-- Ce nom apparaît ensuite dans les logs des parties.
-
-**Décision / réponse**
-
-- Le nom actuellement présent dans le template (`Default player name`) doit être remplacé par le nom choisi par l'équipe.
-
-**Actions**
-
-- Choisir le nom de l'équipe.
-- Modifier la réponse de `/name`.
-
----
-
-### 4. Tram `start_game`
-
-**Résumé**
-
-- La tram `start_game` est appelée au début de chaque nouvelle partie.
-- Elle reçoit notamment l'identifiant de la partie.
-- Cette tram peut être utilisée pour initialiser les informations internes nécessaires au bot pour cette partie.
-
-**Décision / réponse**
-
-- À chaque début de partie, le bot peut créer un nouvel espace de stockage associé au `game_id`.
-- Une réponse doit être renvoyée à l'arbitre afin de confirmer que le début de partie a bien été pris en compte.
-
-**Actions**
-
-- Initialiser les données propres à chaque partie dans `start_game`.
-- Associer ces données au `game_id`.
-
----
-
-### 5. Tram `start_turn`
-
-**Résumé**
-
-- Une tram de début de tour est appelée par l'arbitre lorsqu'un nouveau tour commence.
-- Cette tram permet au bot de savoir qu'un nouveau tour débute.
-
-**Décision / réponse**
-
-- Cette tram pourra notamment servir à :
-  - incrémenter le numéro du tour ;
-  - réinitialiser certaines informations propres au tour ;
-  - préparer la stratégie du bot.
-
-**Actions**
-
-- Ajouter si nécessaire un compteur de tours propre à chaque partie.
-
----
-
-### 6. Tram principale `/play`
-
-**Résumé**
-
-- `/play` est la méthode principale utilisée pour demander une décision au bot.
-- Il s'agit d'une requête HTTP POST.
-- Le serveur reçoit dans cette requête l'état actuel de la partie.
-- Le bot doit répondre avec une propriété `decision`.
-
-Plusieurs types de décisions sont possibles.
-
-#### Terminer le tour
-
-Pour ne plus effectuer d'action :
-
-```text
-END_TURN
-```
-
-#### Acheter une carte
-
-Pour acheter une carte :
-
-```text
-BUY NomDeLaCarte
-```
-
-Exemple :
-
-```text
-BUY Gold
-```
-
-Le nom de la carte doit correspondre exactement à celui communiqué par le serveur.
-
-#### Jouer une carte Action
-
-Pour jouer une carte Action présente dans la main :
-
-```text
-ACTION NomDeLaCarte
-```
-
-Exemple :
-
-```text
-ACTION Village
-```
-
-**Décision / réponse**
-
-- Le bot doit utiliser les noms des cartes tels qu'ils sont envoyés par le serveur.
-- Il n'est pas nécessaire d'indiquer quelles cartes Trésor sont utilisées lors d'un achat.
-
-**Actions**
-
-- Commencer par analyser l'objet `Game` reçu par `/play`.
-- Afficher son contenu dans les logs afin de comprendre précisément les données disponibles.
-- Ajouter progressivement les premières règles de décision.
-
----
-
-### 7. Gestion de l'argent et des achats
-
-**Résumé**
-
-- Lors d'un achat, il n'est pas nécessaire de préciser quels Copper, Silver ou Gold sont utilisés.
-- L'arbitre calcule automatiquement la quantité totale d'argent disponible pendant la phase d'achat.
-- Le joueur peut ensuite effectuer plusieurs achats si son nombre d'achats le permet.
-- Les bonus provenant éventuellement des cartes Action sont également pris en compte dans le total disponible.
-
-**Décision / réponse**
-
-- Le bot doit uniquement choisir la carte à acheter.
-- L'arbitre se charge de vérifier que le joueur possède suffisamment d'argent et suffisamment d'achats disponibles.
-
----
-
-### 8. Gestion des actions invalides
-
-**Résumé**
-
-- L'arbitre vérifie la validité de chaque décision envoyée par le bot.
-- Une tentative d'achat d'une carte trop chère constitue une décision invalide.
-- Une décision invalide peut entraîner l'éjection immédiate du bot de la partie.
-
-**Décision / réponse**
-
-- La stratégie doit toujours vérifier qu'une décision est valide avant de l'envoyer à l'arbitre.
-
-**Actions**
-
-- Vérifier notamment :
-  - l'argent disponible ;
-  - les cartes présentes dans la réserve ;
-  - les cartes présentes dans la main ;
-  - les actions disponibles ;
-  - les achats disponibles.
-
----
-
-### 9. Informations disponibles dans l'état du jeu
-
-**Résumé**
-
-Lors de l'appel à `/play`, le bot reçoit un objet JSON contenant l'état actuel du jeu.
-
-Plusieurs propriétés ont été précisées pendant la réunion.
-
-#### `Finish`
-
-- Cette propriété indique l'état de fin de partie.
-- Elle semble actuellement avoir peu d'utilité pendant le déroulement normal de la partie.
-
-#### `Players`
-
-- Contient une liste d'informations relatives aux joueurs.
-- Les informations d'un joueur comportent notamment une propriété `Name`.
-- Toutes les informations privées des autres joueurs ne sont pas accessibles.
-- En particulier, le bot ne connaît pas directement le nombre de points de victoire des adversaires.
-
-#### `Stock`
-
-- Contient la quantité de cartes disponibles dans la réserve.
-- Cette propriété permet donc de déterminer quelles cartes sont actuellement présentes dans la partie.
-
-**Décision / réponse**
-
-- `Stock` est une information importante pour découvrir automatiquement les cartes disponibles.
-- Dans un premier temps, le bot peut simplement afficher cette propriété dans ses logs.
-
-**Actions**
-
-- Ajouter un `print` de `Stock`.
-- Observer les parties lancées automatiquement par l'arbitre.
-- Recenser les noms des cartes rencontrées.
-- Utiliser cette liste pour documenter progressivement les effets et les coûts des cartes.
-
----
-
-### 10. Première stratégie à mettre en place
-
-**Résumé**
-
-- L'objectif immédiat n'est pas de construire une stratégie complexe.
-- Il faut d'abord disposer d'un bot fonctionnel capable de communiquer correctement avec l'arbitre.
-- Le template fourni répond actuellement principalement par `END_TURN`.
-- Une première stratégie plus performante doit être livrée rapidement.
-
-**Décision / réponse**
-
-La progression envisagée est :
-
-1. communiquer correctement avec l'arbitre ;
-2. afficher et comprendre l'état du jeu ;
-3. identifier les cartes présentes grâce à `Stock` ;
-4. connaître leurs coûts et leurs effets ;
-5. mettre en place une stratégie d'achat simple ;
-6. ajouter progressivement les cartes Action et leurs décisions particulières.
-
-**Actions**
-
-- Dans un premier temps, afficher dans les logs :
-  - l'état général de la partie ;
-  - le contenu de `Stock` ;
-  - éventuellement les informations sur les joueurs et la main.
-- Construire ensuite les premières règles déterministes du bot.
 
 ## Sujets prévus mais non traités
 
-- Liste définitive des 10 cartes Action.
-- Effets précis de toutes les cartes disponibles.
-- Coût précis de chaque carte dans l'implémentation.
-- Fonctionnement détaillé des futures cartes Curse.
-- Informations complètes disponibles dans l'objet `Players`.
-- Structure exacte de tous les champs de l'objet `Game`.
-- Stratégie optimale à adopter face aux autres bots.
-- Gestion détaillée des choix spécifiques provoqués par certaines cartes Action.
-
-## Tableau récapitulatif des actions
-
-| Action | Responsable | Échéance |
-|---|---|---|
-| Afficher le contenu de `Stock` dans les logs | Équipe | Dès que possible |
-| Recenser les cartes réellement présentes dans les parties | Équipe | Dès que possible |
-| Rechercher les effets et coûts des cartes identifiées | Équipe | Après identification |
-| Remplacer le nom par défaut du bot | Équipe | Dès que possible |
-| Préparer un stockage séparé pour chaque `game_id` | Équipe | Avant les parties simultanées |
-| Mettre en place une première stratégie d'achat | Équipe | Au plus tôt |
-| Vérifier systématiquement la validité des décisions avant leur envoi | Équipe | Permanent |
+- Malédictions : informations à venir.
+- Liste complète des cartes de la version 2008 : non fournie pour l'instant.
 
 ## Prochaine réunion
 
