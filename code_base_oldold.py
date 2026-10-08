@@ -1,9 +1,7 @@
 import html
 import json
-import threading
-from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 from dopynion.cards import Card
 from dopynion.data_model import (
@@ -21,69 +19,26 @@ from pydantic import BaseModel
 app = FastAPI()
 
 #####################################################
-# Logs : console + fichier logs.json (meme dossier que ce fichier)
+# Logs : affiche chaque requete envoyee par le serveur
 #####################################################
-
-FICHIER_LOGS = Path(__file__).resolve().parent / "logs.json"
-_verrou_logs = threading.Lock()  # evite que deux requetes ecrivent en meme temps
-
-
-def ecrire_log(entree: dict[str, Any]) -> None:
-    """Ajoute une entree a la liste JSON du fichier logs.json."""
-    entree = {"horodatage": datetime.now().isoformat(timespec="seconds"), **entree}
-    with _verrou_logs:
-        try:
-            logs = json.loads(FICHIER_LOGS.read_text(encoding="utf-8"))
-            if not isinstance(logs, list):
-                logs = []
-        except (FileNotFoundError, ValueError):
-            logs = []
-        logs.append(entree)
-        FICHIER_LOGS.write_text(
-            json.dumps(logs, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
 
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     body = await request.body()
-    contenu: Any
     if body:
         try:
-            contenu = json.loads(body)
+            contenu = json.dumps(json.loads(body), indent=2, ensure_ascii=False)
         except ValueError:
             contenu = body.decode("utf-8", errors="replace")
     else:
-        contenu = None
-
-    game_id = request.headers.get("x-game-id")
-    affichage = (
-        json.dumps(contenu, indent=2, ensure_ascii=False)
-        if contenu is not None
-        else "(pas de contenu)"
-    )
+        contenu = "(pas de contenu)"
     print(
-        f"\n>>> {request.method} {request.url.path} | partie={game_id}\n{affichage}",
+        f"\n>>> {request.method} {request.url.path} "
+        f"| partie={request.headers.get('x-game-id')}\n{contenu}",
         flush=True,
     )
-    ecrire_log(
-        {
-            "type": "requete",
-            "methode": request.method,
-            "route": request.url.path,
-            "partie": game_id,
-            "contenu": contenu,
-        }
-    )
     return await call_next(request)
-
-
-def log_decision(game_id: str, route: str, decision: Any) -> None:
-    """Affiche et enregistre la decision renvoyee au serveur."""
-    print(f">>> Décision ({route}) : {decision}", flush=True)
-    ecrire_log(
-        {"type": "decision", "route": route, "partie": game_id, "decision": decision}
-    )
 
 
 #####################################################
@@ -126,9 +81,6 @@ GameIdDependency = Annotated[str, Depends(get_game_id)]
 @app.exception_handler(Exception)
 def unknown_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
     print(exc.__class__.__name__, str(exc))
-    ecrire_log(
-        {"type": "erreur", "nom": exc.__class__.__name__, "detail": str(exc)}
-    )
     return JSONResponse(
         status_code=500,
         content={
@@ -168,16 +120,6 @@ NOM_JOUEUR = "Le 4ème Empire"
 
 # Memorise, pour chaque partie, si on a deja achete pendant le tour en cours
 achat_fait: dict[str, bool] = {}
-
-# Ordre de priorité des achats
-PRIORITE_ACHAT = [
-    "province",
-    "gold",
-    "duchy",
-    "silver",
-    "estate",
-    "copper",
-]
 
 
 @app.get("/name")
@@ -238,58 +180,19 @@ def afficher_situation(game: Game) -> None:
     print("-------------------------------------", flush=True)
 
 
-def choisir_achat(game: Game) -> CardName | None:
-    """Choisit la meilleure carte achetable selon l'ordre de priorité."""
-
-    # Trouve notre joueur
-    moi = next((p for p in game.players if p.hand is not None), None)
-    if moi is None:
-        moi = next((p for p in game.players if p.name == NOM_JOUEUR), None)
-
-    if moi is None or moi.hand is None:
-        return None
-
-    # Calcule l'argent disponible
-    argent = sum(
-        Card.class_(c).money * n
-        for c, n in moi.hand.quantities.items()
-    )
-
-    # Liste des cartes actuellement achetables
-    achetables = [
-        c
-        for c, n in game.stock.quantities.items()
-        if n > 0 and Card.class_(c).cost <= argent
-    ]
-
-    # Cherche la meilleure carte selon la priorité
-    for nom_carte in PRIORITE_ACHAT:
-        for carte in achetables:
-            if carte.value.lower() == nom_carte:
-                return carte
-
-    return None
-
-
 @app.post("/play")
 def play(game: Game, game_id: GameIdDependency) -> DopynionResponseStr:
     afficher_situation(game)
 
-    # Premier appel du tour : on choisit le meilleur achat possible
+    # Premier appel du tour : on achete un copper
     if not achat_fait.get(game_id, False):
-        carte_choisie = choisir_achat(game)
+        achat_fait[game_id] = True
+        print(">>> Décision : BUY copper", flush=True)
+        return DopynionResponseStr(game_id=game_id, decision="BUY copper")
 
-        if carte_choisie is not None:
-            achat_fait[game_id] = True
-            decision = f"BUY {carte_choisie.value}"
-        else:
-            decision = "END_TURN"
-    else:
-        # Achat deja fait : on termine le tour
-        decision = "END_TURN"
-
-    log_decision(game_id, "/play", decision)
-    return DopynionResponseStr(game_id=game_id, decision=decision)
+    # Achat deja fait : on termine le tour
+    print(">>> Décision : END_TURN", flush=True)
+    return DopynionResponseStr(game_id=game_id, decision="END_TURN")
 
 
 @app.get("/end_game")

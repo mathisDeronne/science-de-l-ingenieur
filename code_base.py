@@ -148,6 +148,16 @@ NOM_JOUEUR = "Le 4ème Empire"
 # Memorise, pour chaque partie, si on a deja achete pendant le tour en cours
 achat_fait: dict[str, bool] = {}
 
+# Ordre de priorité pour les achats
+PRIORITE_ACHAT = [
+    "province",
+    "gold",
+    "duchy",
+    "silver",
+    "estate",
+    "copper",
+]
+
 
 @app.get("/name")
 def name() -> str:
@@ -243,14 +253,69 @@ def afficher_situation(game: Game, game_id: str) -> None:
     ecrire_situation(situation)
 
 
+def choisir_achat(game_id: str) -> str | None:
+    """
+    Lit logs.json et choisit la meilleure carte achetable
+    selon l'ordre de priorité :
+
+    Province > Gold > Duchy > Silver > Estate > Copper
+    """
+
+    try:
+        with _verrou_logs:
+            situation = json.loads(
+                FICHIER_LOGS.read_text(encoding="utf-8")
+            )
+    except (FileNotFoundError, ValueError):
+        print("Impossible de lire logs.json", flush=True)
+        return None
+
+    # Vérification que le fichier correspond bien à la partie actuelle
+    if situation.get("partie") != game_id:
+        print(
+            f"Le logs.json ne correspond pas à la partie {game_id}",
+            flush=True,
+        )
+        return None
+
+    # Récupère les cartes achetables calculées dans afficher_situation()
+    achetables = situation.get("achetables", [])
+
+    print(
+        f"Cartes achetables depuis logs.json : {achetables}",
+        flush=True,
+    )
+
+    # Parcourt les cartes dans l'ordre de priorité
+    for carte_prioritaire in PRIORITE_ACHAT:
+        for carte in achetables:
+            if carte.lower() == carte_prioritaire:
+                print(
+                    f"Achat choisi : {carte}",
+                    flush=True,
+                )
+                return carte
+
+    print("Aucune carte de la priorité n'est achetable.", flush=True)
+    return None
+
+
 @app.post("/play")
 def play(game: Game, game_id: GameIdDependency) -> DopynionResponseStr:
+    # Met à jour logs.json avec la situation actuelle
     afficher_situation(game, game_id)
 
-    # Premier appel du tour : on achete un copper
+    # Si aucun achat n'a encore été effectué pendant ce tour
     if not achat_fait.get(game_id, False):
-        achat_fait[game_id] = True
-        decision = "BUY copper"
+
+        carte_choisie = choisir_achat(game_id)
+
+        if carte_choisie is not None:
+            decision = f"BUY {carte_choisie}"
+            achat_fait[game_id] = True
+        else:
+            decision = "END_TURN"
+
     else:
         # Achat deja fait : on termine le tour
         decision = "END_TURN"
