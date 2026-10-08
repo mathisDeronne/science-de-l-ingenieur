@@ -145,7 +145,17 @@ def root() -> str:
 
 NOM_JOUEUR = "Le 4ème Empire"
 
-# Memorise, pour chaque partie, si on a deja achete pendant le tour en cours
+# Ordre de priorité des achats
+PRIORITE_ACHAT = [
+    "province",
+    "gold",
+    "duchy",
+    "silver",
+    "estate",
+    "copper",
+]
+
+# Mémorise, pour chaque partie, si on a déjà acheté pendant le tour en cours
 achat_fait: dict[str, bool] = {}
 
 
@@ -157,18 +167,101 @@ def name() -> str:
 @app.get("/start_game")
 def start_game(game_id: GameIdDependency) -> DopynionResponseStr:
     achat_fait[game_id] = False
-    return DopynionResponseStr(game_id=game_id, decision="OK")
+
+    return DopynionResponseStr(
+        game_id=game_id,
+        decision="OK",
+    )
 
 
 @app.get("/start_turn")
 def start_turn(game_id: GameIdDependency) -> DopynionResponseStr:
-    achat_fait[game_id] = False  # nouveau tour : on n'a encore rien achete
-    return DopynionResponseStr(game_id=game_id, decision="OK")
+    # Nouveau tour : aucun achat effectué
+    achat_fait[game_id] = False
+
+    return DopynionResponseStr(
+        game_id=game_id,
+        decision="OK",
+    )
 
 
-def afficher_situation(game: Game, game_id: str) -> None:
-    """Affiche un resume de la partie (main, argent, achats possibles, scores, reserve)
-    dans la console ET l'enregistre dans logs.json."""
+def trouver_mon_joueur(game: Game):
+    """Trouve notre joueur dans l'état de la partie."""
+
+    # Normalement, notre joueur est celui dont la main est visible
+    moi = next(
+        (p for p in game.players if p.hand is not None),
+        None,
+    )
+
+    # Sécurité : recherche avec le nom du bot
+    if moi is None:
+        moi = next(
+            (p for p in game.players if p.name == NOM_JOUEUR),
+            None,
+        )
+
+    return moi
+
+
+def choisir_achat(game: Game) -> CardName | None:
+    """
+    Choisit la meilleure carte achetable selon cet ordre :
+
+    Province > Gold > Duchy > Silver > Estate > Copper
+    """
+
+    moi = trouver_mon_joueur(game)
+
+    # Impossible de calculer l'argent sans notre main
+    if moi is None or moi.hand is None:
+        print("Impossible de trouver ma main pour choisir un achat.", flush=True)
+        return None
+
+    # Calcul de l'argent disponible dans la main
+    argent = sum(
+        Card.class_(carte).money * quantite
+        for carte, quantite in moi.hand.quantities.items()
+    )
+
+    # Liste des cartes réellement achetables :
+    # - encore disponibles dans le stock
+    # - coût inférieur ou égal à notre argent
+    achetables = [
+        carte
+        for carte, quantite in game.stock.quantities.items()
+        if quantite > 0
+        and Card.class_(carte).cost <= argent
+    ]
+
+    print(
+        f"Argent disponible : {argent}",
+        flush=True,
+    )
+
+    print(
+        "Cartes achetables :",
+        [carte.value for carte in achetables],
+        flush=True,
+    )
+
+    # Recherche selon notre ordre de priorité
+    for nom_carte in PRIORITE_ACHAT:
+        for carte in achetables:
+            if carte.value.lower() == nom_carte:
+                print(
+                    f"Carte choisie pour l'achat : {carte.value}",
+                    flush=True,
+                )
+                return carte
+
+    # Aucune carte de notre stratégie n'est achetable
+    print("Aucune carte intéressante à acheter.", flush=True)
+    return None
+
+
+def afficher_situation(game: Game) -> None:
+    """Affiche un resume lisible de la partie : ma main, mon argent, les scores, la reserve."""
     # Mon joueur : celui dont on connait la main (sinon, on cherche par le nom)
     moi = next((p for p in game.players if p.hand is not None), None)
     if moi is None:
@@ -177,56 +270,53 @@ def afficher_situation(game: Game, game_id: str) -> None:
     situation: dict[str, Any] = {"partie": game_id}
 
     print("------------- SITUATION -------------")
+
     if moi is not None and moi.hand is not None:
         main = moi.hand.quantities
+
         nb_cartes = sum(main.values())
         argent = sum(Card.class_(c).money * n for c, n in main.items())
-        actions = [c.value for c in main if Card.class_(c).is_action]
+        actions = [c for c in main if Card.class_(c).is_action]
+
+        print(f"Joueur        : {moi.name} (score {moi.score})")
+        print(f"Cartes en main: {nb_cartes}")
+
+        for carte, quantite in main.items():
+            infos = Card.class_(carte)
+
+            print(
+                f"   - {quantite} x {carte.value:<15} "
+                f"(argent {infos.money}, coût {infos.cost})"
+            )
+
+        print(f"Argent dispo  : {argent}")
+        print(f"Cartes action : {[c.value for c in actions] or 'aucune'}")
         achetables = [
             c.value
             for c, n in game.stock.quantities.items()
             if n > 0 and Card.class_(c).cost <= argent
         ]
-
-        print(f"Joueur        : {moi.name} (score {moi.score})")
-        print(f"Cartes en main: {nb_cartes}")
-        for carte, n in main.items():
-            infos = Card.class_(carte)
-            print(f"   - {n} x {carte.value:<15} (argent {infos.money}, coût {infos.cost})")
-        print(f"Argent dispo  : {argent}")
-        print(f"Cartes action : {actions or 'aucune'}")
         print(f"Je peux acheter : {achetables or 'rien'}")
-
-        situation.update(
-            {
-                "joueur": moi.name,
-                "score": moi.score,
-                "nb_cartes_en_main": nb_cartes,
-                "main": [
-                    {
-                        "carte": carte.value,
-                        "quantite": n,
-                        "argent": Card.class_(carte).money,
-                        "cout": Card.class_(carte).cost,
-                    }
-                    for carte, n in main.items()
-                ],
-                "argent_dispo": argent,
-                "cartes_action": actions,
-                "achetables": achetables,
-            }
-        )
     else:
         print("Ma main n'a pas été trouvée dans la trame.")
         situation["main"] = None
 
     print("Scores        :")
-    for p in game.players:
-        print(f"   - {p.name:<20} {p.score}")
+
+    for joueur in game.players:
+        print(
+            f"   - {joueur.name:<20} {joueur.score}"
+        )
 
     print("Réserve (stock):")
-    for carte, n in game.stock.quantities.items():
-        print(f"   - {carte.value:<15} x{n:<3} (coût {Card.class_(carte).cost})")
+
+    for carte, quantite in game.stock.quantities.items():
+        print(
+            f"   - {carte.value:<15} "
+            f"x{quantite:<3} "
+            f"(coût {Card.class_(carte).cost})"
+        )
+
     print(f"Partie finie  : {game.finished}")
     print("-------------------------------------", flush=True)
 
@@ -245,24 +335,52 @@ def afficher_situation(game: Game, game_id: str) -> None:
 
 @app.post("/play")
 def play(game: Game, game_id: GameIdDependency) -> DopynionResponseStr:
-    afficher_situation(game, game_id)
+    afficher_situation(game)
 
-    # Premier appel du tour : on achete un copper
+    # Si aucun achat n'a encore été effectué pendant ce tour
     if not achat_fait.get(game_id, False):
-        achat_fait[game_id] = True
-        decision = "BUY copper"
+
+        carte_choisie = choisir_achat(game)
+
+        # Une carte valide a été trouvée
+        if carte_choisie is not None:
+            decision = f"BUY {carte_choisie.value}"
+
+            # On mémorise que l'achat a été effectué
+            achat_fait[game_id] = True
+
+        else:
+            # Rien d'intéressant / possible
+            decision = "END_TURN"
+
     else:
-        # Achat deja fait : on termine le tour
+        # Achat déjà effectué pendant ce tour
         decision = "END_TURN"
 
-    log_decision(game_id, "/play", decision)
-    return DopynionResponseStr(game_id=game_id, decision=decision)
+    log_decision(
+        game_id,
+        "/play",
+        decision,
+    )
+
+    return DopynionResponseStr(
+        game_id=game_id,
+        decision=decision,
+    )
 
 
 @app.get("/end_game")
-def end_game(game_id: GameIdDependency) -> DopynionResponseStr:
-    achat_fait.pop(game_id, None)  # on libere la memoire de cette partie
-    return DopynionResponseStr(game_id=game_id, decision="OK")
+def end_game(
+    game_id: GameIdDependency,
+) -> DopynionResponseStr:
+
+    # Libère les informations mémorisées pour cette partie
+    achat_fait.pop(game_id, None)
+
+    return DopynionResponseStr(
+        game_id=game_id,
+        decision="OK",
+    )
 
 
 @app.post("/confirm_discard_card_from_hand")
