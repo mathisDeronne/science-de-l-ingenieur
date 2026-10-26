@@ -31,6 +31,7 @@ from game_utils import (
 )
 from logger_utils import (
     afficher_situation,
+    enregistrer_decision,
     initialiser_historique,
     terminer_historique,
 )
@@ -251,6 +252,18 @@ def play(
         if game.finished:
             decision = "END_TURN"
 
+            enregistrer_decision(
+                game_id,
+                etat["tour"],
+                decision,
+            )
+
+            log_decision(
+                game_id,
+                "/play",
+                decision,
+            )
+
             log_decision(
                 game_id,
                 "/play",
@@ -264,6 +277,18 @@ def play(
 
         if bot_officiel_en_face(game):
             decision = "END_TURN"
+
+            enregistrer_decision(
+                game_id,
+                etat["tour"],
+                decision,
+            )
+
+            log_decision(
+                game_id,
+                "/play",
+                decision,
+            )
 
             print(
                 f">>> {NOM_BOT_OFFICIEL} "
@@ -300,6 +325,12 @@ def play(
                 decision = (
                     f"ACTION "
                     f"{carte_action.value}"
+                )
+
+                enregistrer_decision(
+                    game_id,
+                    etat["tour"],
+                    decision,
                 )
 
                 log_decision(
@@ -352,6 +383,12 @@ def play(
                     f"BUY {carte.value}"
                 )
 
+                enregistrer_decision(
+                    game_id,
+                    etat["tour"],
+                    decision,
+                )
+
                 log_decision(
                     game_id,
                     "/play",
@@ -364,6 +401,18 @@ def play(
                 )
 
         decision = "END_TURN"
+
+        enregistrer_decision(
+            game_id,
+            etat["tour"],
+            decision,
+        )
+
+        log_decision(
+            game_id,
+            "/play",
+            decision,
+        )
 
         log_decision(
             game_id,
