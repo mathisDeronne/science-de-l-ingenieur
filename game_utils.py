@@ -1,16 +1,13 @@
+import re
+
 from dopynion.cards import Card
 from dopynion.data_model import Game
 
-from config import NOM_JOUEUR
+from config import NOM_BOT_OFFICIEL
 
 
 def trouver_mon_joueur(game: Game):
-    """
-    Notre joueur est normalement celui
-    dont la main est visible.
-    """
-
-    moi = next(
+    return next(
         (
             joueur
             for joueur in game.players
@@ -19,105 +16,96 @@ def trouver_mon_joueur(game: Game):
         None,
     )
 
-    if moi is None:
-        moi = next(
-            (
-                joueur
-                for joueur in game.players
-                if NOM_JOUEUR.lower()
-                in joueur.name.lower()
-            ),
-            None,
-        )
-
-    return moi
-
 
 def calculer_argent_main(game: Game) -> int:
-    """
-    Calcule l'argent provenant des cartes Trésor.
-
-    Les bonus des cartes Action sont suivis
-    séparément dans state.py.
-    """
-
     moi = trouver_mon_joueur(game)
 
     if moi is None or moi.hand is None:
         return 0
 
-    argent = 0
-
-    for carte, quantite in moi.hand.quantities.items():
-
-        infos = Card.class_(carte)
-
-        if not infos.is_action:
-            argent += infos.money * quantite
-
-    return argent
+    return sum(
+        Card.class_(carte).money * quantite
+        for carte, quantite
+        in moi.hand.quantities.items()
+        if not Card.class_(carte).is_action
+    )
 
 
 def quantite_stock(
     game: Game,
-    nom_carte: str,
+    nom: str,
 ) -> int:
+    nom = nom.lower()
 
-    for carte, quantite in game.stock.quantities.items():
-
-        if carte.value.lower() == nom_carte:
-            return quantite
-
-    return 0
+    return next(
+        (
+            quantite
+            for carte, quantite
+            in game.stock.quantities.items()
+            if carte.value.lower() == nom
+        ),
+        0,
+    )
 
 
 def provinces_restantes(game: Game) -> int:
-    return quantite_stock(
-        game,
-        "province",
-    )
+    return quantite_stock(game, "province")
 
 
 def curses_restantes(game: Game) -> int:
-    return quantite_stock(
-        game,
-        "curse",
-    )
+    return quantite_stock(game, "curse")
 
 
 def nombre_piles_vides(game: Game) -> int:
     return sum(
-        1
-        for quantite in game.stock.quantities.values()
-        if quantite == 0
+        quantite == 0
+        for quantite
+        in game.stock.quantities.values()
     )
 
 
 def risque_fin_par_piles(game: Game) -> bool:
-    """
-    Détecte si trois piles sont proches d'être épuisées.
-
-    Exemple à 4 joueurs :
-
-        0 / 0 / 8 -> pas urgent
-        0 / 0 / 2 -> urgent
-        0 / 1 / 2 -> urgent
-
-    On évite ainsi de passer trop tôt en mode
-    "Estate à tout prix" simplement parce que
-    deux piles sont déjà vides.
-    """
-
-    quantites = sorted(
+    trois_piles = sorted(
         game.stock.quantities.values()
-    )
-
-    if len(quantites) < 3:
-        return False
-
-    troisieme_plus_petite = quantites[2]
+    )[:3]
 
     return (
-        troisieme_plus_petite
-        <= len(game.players)
+        len(trois_piles) == 3
+        and sum(trois_piles) <= len(game.players)
+    )
+
+
+def nom_simple(nom: str) -> str:
+    nom = re.sub(
+        r"^\[[^\]]+\]\s*",
+        "",
+        nom,
+    )
+
+    nom = re.sub(
+        r"\s*\([^()]+\)\s*$",
+        "",
+        nom,
+    )
+
+    return nom.strip()
+
+
+def bot_officiel_en_face(game: Game) -> bool:
+    moi = trouver_mon_joueur(game)
+
+    if moi is None:
+        return False
+
+    if (
+        nom_simple(moi.name).casefold()
+        == NOM_BOT_OFFICIEL.casefold()
+    ):
+        return False
+
+    return any(
+        joueur is not moi
+        and nom_simple(joueur.name).casefold()
+        == NOM_BOT_OFFICIEL.casefold()
+        for joueur in game.players
     )
