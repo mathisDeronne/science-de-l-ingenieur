@@ -1,12 +1,10 @@
-<<<<<<< HEAD
-NOM_JOUEUR = "Le 4ème Empire"
-=======
+
 NOM_BOT_OFFICIEL = "Le 4ème Empire"
 NOM_BOT_DEV = "Le 4ème Empire le Remake"
 
 DOMAINE_BOT_OFFICIEL = "le-4eme-empire.alwaysdata.net"
 DOMAINE_BOT_DEV = "le-4eme-empire-le-remake.alwaysdata.net"
->>>>>>> dev
+
 
 
 def obtenir_nom_joueur(host: str) -> str:
