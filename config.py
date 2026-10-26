@@ -1,4 +1,4 @@
-NOM_JOUEUR = "Le 4ème Empire le Remake"
+NOM_JOUEUR = "Le 4ème Empire"
 
 
 #####################################################
