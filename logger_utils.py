@@ -1,4 +1,5 @@
 import json
+import re
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -9,21 +10,40 @@ from dopynion.data_model import Game
 
 from game_utils import (
     calculer_argent_main,
+    curses_restantes,
+    nombre_piles_vides,
     provinces_restantes,
     trouver_mon_joueur,
 )
 from state import obtenir_etat
 
 
-FICHIER_LOGS = (
+DOSSIER_LOGS = (
     Path(__file__).resolve().parent
-    / "logs.json"
+    / "logs"
+)
+
+DOSSIER_LOGS.mkdir(
+    exist_ok=True,
 )
 
 _verrou_logs = threading.Lock()
 
 
+def nom_fichier_game(game_id: str) -> str:
+    """Evite les caractères problématiques dans un nom de fichier."""
+
+    propre = re.sub(
+        r"[^a-zA-Z0-9_-]",
+        "_",
+        game_id,
+    )
+
+    return propre + ".json"
+
+
 def ecrire_situation(
+    game_id: str,
     situation: dict[str, Any],
 ) -> None:
 
@@ -34,8 +54,14 @@ def ecrire_situation(
         **situation,
     }
 
+    fichier = (
+        DOSSIER_LOGS
+        / nom_fichier_game(game_id)
+    )
+
     with _verrou_logs:
-        FICHIER_LOGS.write_text(
+
+        fichier.write_text(
             json.dumps(
                 situation,
                 indent=2,
@@ -58,14 +84,17 @@ def afficher_situation(
         "tour": etat["tour"],
     }
 
-    print("------------- SITUATION -------------")
+    print(
+        "------------- SITUATION -------------"
+    )
 
     if moi is not None and moi.hand is not None:
 
         main = moi.hand.quantities
-        nb_cartes = sum(main.values())
 
-        argent_tresor = calculer_argent_main(game)
+        argent_tresor = calculer_argent_main(
+            game
+        )
 
         if etat["argent_restant"] is None:
             argent_dispo = (
@@ -73,9 +102,9 @@ def afficher_situation(
                 + etat["bonus_pieces"]
             )
         else:
-            argent_dispo = (
-                etat["argent_restant"]
-            )
+            argent_dispo = etat[
+                "argent_restant"
+            ]
 
         actions = [
             carte.value
@@ -96,8 +125,14 @@ def afficher_situation(
         ]
 
         print(f"Tour          : {etat['tour']}")
-        print(f"Joueur        : {moi.name} (score {moi.score})")
-        print(f"Cartes en main: {nb_cartes}")
+        print(
+            f"Joueur        : {moi.name} "
+            f"(score {moi.score})"
+        )
+
+        print(
+            f"Cartes en main: {sum(main.values())}"
+        )
 
         for carte, quantite in main.items():
 
@@ -106,7 +141,8 @@ def afficher_situation(
             print(
                 f"   - {quantite} x "
                 f"{carte.value:<15} "
-                f"(argent {infos.money}, coût {infos.cost})"
+                f"(argent {infos.money}, "
+                f"coût {infos.cost})"
             )
 
         print(f"Argent trésor : {argent_tresor}")
@@ -116,28 +152,37 @@ def afficher_situation(
         print(f"Achats dispo  : {etat['achats_restants']}")
         print(f"Phase achat   : {etat['phase_achat']}")
         print(f"Cartes action : {actions or 'aucune'}")
-        print(f"Je peux acheter : {achetables or 'rien'}")
+
+        print(
+            f"Provinces     : "
+            f"{provinces_restantes(game)}"
+        )
+
+        print(
+            f"Curses        : "
+            f"{curses_restantes(game)}"
+        )
+
+        print(
+            f"Piles vides   : "
+            f"{nombre_piles_vides(game)}"
+        )
+
+        print(
+            f"Je peux acheter : "
+            f"{achetables or 'rien'}"
+        )
 
         situation.update(
             {
                 "joueur": moi.name,
                 "score": moi.score,
 
-                "nb_cartes_en_main":
-                    nb_cartes,
-
-                "main": [
-                    {
-                        "carte": carte.value,
-                        "quantite": quantite,
-                        "argent":
-                            Card.class_(carte).money,
-                        "cout":
-                            Card.class_(carte).cost,
-                    }
+                "main": {
+                    carte.value: quantite
                     for carte, quantite
                     in main.items()
-                ],
+                },
 
                 "argent_tresor":
                     argent_tresor,
@@ -171,15 +216,14 @@ def afficher_situation(
 
                 "provinces_restantes":
                     provinces_restantes(game),
+
+                "curses_restantes":
+                    curses_restantes(game),
+
+                "piles_vides":
+                    nombre_piles_vides(game),
             }
         )
-
-    else:
-        print(
-            "Ma main n'a pas été trouvée."
-        )
-
-        situation["main"] = None
 
     print("Scores :")
 
@@ -192,6 +236,7 @@ def afficher_situation(
     print("Réserve :")
 
     for carte, quantite in game.stock.quantities.items():
+
         print(
             f"   - {carte.value:<15} "
             f"x{quantite:<3} "
@@ -199,7 +244,11 @@ def afficher_situation(
         )
 
     print(f"Partie finie : {game.finished}")
-    print("-------------------------------------", flush=True)
+
+    print(
+        "-------------------------------------",
+        flush=True,
+    )
 
     situation.update(
         {
@@ -223,4 +272,7 @@ def afficher_situation(
         }
     )
 
-    ecrire_situation(situation)
+    ecrire_situation(
+        game_id,
+        situation,
+    )

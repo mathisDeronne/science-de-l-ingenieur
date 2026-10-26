@@ -32,10 +32,10 @@ def trouver_mon_joueur(game: Game):
 
 def calculer_argent_main(game: Game) -> int:
     """
-    Calcule uniquement l'argent provenant des cartes Trésor.
+    Calcule uniquement les cartes Trésor.
 
-    Les pièces données par les cartes Action sont gérées
-    séparément dans l'état du tour.
+    Les bonus de Festival, Market, Woodcutter...
+    sont comptés séparément.
     """
 
     moi = trouver_mon_joueur(game)
@@ -55,12 +55,38 @@ def calculer_argent_main(game: Game) -> int:
     return argent
 
 
-def provinces_restantes(game: Game) -> int:
-    """Nombre de Provinces encore présentes dans la réserve."""
+def quantite_stock(
+    game: Game,
+    nom_carte: str,
+) -> int:
 
     for carte, quantite in game.stock.quantities.items():
 
-        if carte.value.lower() == "province":
+        if carte.value.lower() == nom_carte:
             return quantite
 
     return 0
+
+
+def provinces_restantes(game: Game) -> int:
+    return quantite_stock(
+        game,
+        "province",
+    )
+
+
+def curses_restantes(game: Game) -> int:
+    return quantite_stock(
+        game,
+        "curse",
+    )
+
+
+def nombre_piles_vides(game: Game) -> int:
+    """Nombre de piles de la réserve complètement épuisées."""
+
+    return sum(
+        1
+        for quantite in game.stock.quantities.values()
+        if quantite == 0
+    )
