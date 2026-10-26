@@ -3,16 +3,14 @@
 ## 1. Informations générales
 
 - **Date :** 8 octobre 2026
-- **Début :** 12 h 20
-- **Fin :** 12 h 30
-- **Lieu :** Salle 302, Bordeaux Ynov Campus
-- **Enregistrement :** Réunion enregistrée avec l'accord des participants.
+- **Heure de début / fin** : 14h20 / 14h30
+- **Lieu** : Salle 302 Bordeaux Ynov Campus
+- **Enregistrement** : réunion enregistrée avec l'accord des participants
 
 ## 2. Participants
 
-- **Présents :** Client (nom non précisé), Guillaume, Mathis, Damien ; Léo (arrivé en fin de réunion).
-- **Excusés :** Non précisé.
-- **Absents :** Aucun, selon les notes.
+- **Présents** : Client, Guillaume, Mathis, Damien, Léo
+- **Absents** : Personne
 
 ## 3. Ordre du jour initial
 
@@ -27,8 +25,6 @@ Les notes évoquent aussi des questions sur les commandes, le fonctionnement de 
 **Discussion :** Un cas observé dans les journaux montre un achat de Province (coût 8) avec 9 pièces disponibles, suivi d'un solde à zéro. L'exemple présenté comporte deux Gold, un Silver et un Copper. L'échange relève que la partie était déjà terminée.
 
 **Réponse apportée :** Le retour observé est expliqué pendant l'échange par la fin de la partie. Aucune correction technique n'est décidée.
-
-**Actions :** Aucune action explicitement attribuée. Responsable : Non précisé. Échéance : Non précisé.
 
 ### 4.2. Liste, coût et effets des cartes
 
@@ -53,15 +49,11 @@ Les notes évoquent aussi des questions sur les commandes, le fonctionnement de 
 
 Le Forgeron est présenté comme simple à jouer ; des combinaisons Forgeron–Village, Laboratoire et Market sont évoquées à titre de conseils de jeu, non comme décisions.
 
-**Actions :** Aucune action explicitement attribuée. Responsable : Non précisé. Échéance : Non précisé.
-
 ### 4.3. Commandes et achats successifs
 
 **Discussion :** Le groupe demande si d'autres commandes principales existent au-delà des actions et achats, et comment transmettre plusieurs achats. Les pièces bonus accordées par les cartes sont également évoquées.
 
 **Réponse apportée :** Aucune autre commande principale n'est annoncée à ce stade ; de futures cartes pourraient en nécessiter. Chaque achat s'envoie séparément via `buy`, jusqu'à l'indication `enter`. L'arbitre contrôle la dépense maximale, mais le comptage des bonus relève de l'agent qui joue.
-
-**Actions :** Aucune action explicitement attribuée. Responsable : Non précisé. Échéance : Non précisé.
 
 ### 4.4. Mécanique des cartes d'action
 
@@ -69,32 +61,14 @@ Le Forgeron est présenté comme simple à jouer ; des combinaisons Forgeron–V
 
 **Réponse apportée :** Une carte d'action peut être jouée même si tous ses effets ne sont pas réalisables ; son traitement doit se terminer avant l'action suivante. La phase d'action peut être ignorée. Par défaut, un seul achat est autorisé par tour, sauf effet donnant des achats supplémentaires. Les cartes achetées vont dans la défausse ; les notions de défausse, retrait du jeu et réception sont distinguées.
 
-**Actions :** Aucune action explicitement attribuée. Responsable : Non précisé. Échéance : Non précisé.
-
 ## 5. Sujets prévus ou évoqués mais non traités complètement
 
 - **Fonctionnement détaillé de l'arbitre :** non traité intégralement, selon les notes. Certains comportements de l'arbitre ont néanmoins été expliqués.
 - **Précisions complémentaires sur le protocole :** non discutées faute de temps en fin de réunion.
 - **Éventuelles nouvelles cartes :** possibilité mentionnée, sans liste ou décision d'ajout confirmée.
 
-## 6. Tableau récapitulatif des actions
-
-Aucune action avec responsable et échéance n'est explicitement décidée dans les sources.
-
-| Action | Responsable | Échéance |
-|---|---|---|
-| Aucune action formellement attribuée | Non précisé | Non précisé |
-
-## 7. Prochaine réunion
+## 6. Prochaine réunion
 
 - **Date :** 8 octobre 2026
 - **Heure de début :** 14 h 20
 - **Lieu :** Non précisé
-
----
-
-<<<<<<< HEAD
-*Document établi à partir des notes « Jour2_aprem.md » et de la transcription « Réunion client aprèm jour 2.txt ». Les libellés incertains de la transcription sont signalés.*
-=======
-*Document établi à partir des notes « Jour2_aprem.md » et de la transcription « Réunion client aprèm jour 2.txt ». Les libellés incertains de la transcription sont signalés.*
->>>>>>> refs/remotes/origin/main
