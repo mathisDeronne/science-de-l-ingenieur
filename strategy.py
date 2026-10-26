@@ -110,7 +110,6 @@ def carte_action_autorisee(
         < limite
     )
 
-
 def prioriser_premiere_witch(
     priorite: list[str],
     game: Game,
@@ -123,6 +122,8 @@ def prioriser_premiere_witch(
         etat["tour"] > 8
         or curses_restantes(game) <= 0
         or nombre_carte_achetee(game_id, "witch") > 0
+        or nombre_total_actions_achetees(game_id)
+        >= NB_ACTIONS_AVANT_ECONOMIE
         or "witch" not in priorite
     ):
         return priorite
@@ -145,7 +146,6 @@ def prioriser_premiere_witch(
     )
 
     return priorite
-
 def obtenir_priorite_achat(
     game: Game,
     game_id: str,
