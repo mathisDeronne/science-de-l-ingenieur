@@ -26,26 +26,36 @@ Les notes évoquent aussi des questions sur les commandes, le fonctionnement de 
 
 **Réponse apportée :** Le retour observé est expliqué pendant l'échange par la fin de la partie. Aucune correction technique n'est décidée.
 
-### 4.2. Liste, coût et effets des cartes
+### 4.2. Liste des cartes vérification
 
-**Discussion :** La liste de cartes annoncée le matin n'a pas changé pendant l'après-midi. Les coûts et effets des cartes connues sont passés en revue. L'ajout éventuel d'autres cartes à l'avenir n'est pas exclu.
+**Résumé**
 
-**Réponse apportée :** Les caractéristiques suivantes sont communiquées :
+- Les carte actions
 
-| Carte | Coût | Effet ou valeur annoncée |
-|---|---:|---|
-| Festival | 5 | +2 actions, +1 achat, +2 pièces |
-| Forgeron (nom transcrit « forge ») | 4 | +3 cartes |
-| Laboratoire | 5 | +2 cartes, +1 action |
-| Village | 3 | +1 carte, +2 actions |
-| Woodcutter | 3 | +1 achat, +2 pièces |
-| Market | 5 | +1 carte, +1 action, +1 achat, +1 pièce |
-| Copper | 0 | Valeur en monnaie : 1 (présente dans l'exemple de 9 pièces) |
-| Silver | 3 | Valeur en monnaie : 2 |
-| Gold | 6 | Valeur en monnaie : 3 |
-| Estate | 2 | 1 point |
-| « Deci » (nom issu de la transcription, à confirmer) | 5 | 3 points |
-| Province | 8 | 6 points |
+| Nom | Vérifié |
+|---|---|
+|Village|☑|
+|Woodcutter|☑|
+|smithy|☑|
+|Market|☑|
+|Festival|☑|
+|Laboratory|☑|
+
+- Les cartes Trésor 
+
+| Nom | Vérifié |
+|---|---|
+|Copper|☑|
+|Silver|☑|
+|Gold|☑|
+
+- Les cartes Victoire 
+
+| Nom | Vérifié |
+|---|---|
+|Estate|☑|
+|Duchy|☑|
+|Province|☑|
 
 Le Forgeron est présenté comme simple à jouer ; des combinaisons Forgeron–Village, Laboratoire et Market sont évoquées à titre de conseils de jeu, non comme décisions.
 
