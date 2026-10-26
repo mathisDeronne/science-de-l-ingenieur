@@ -11,8 +11,6 @@ _verrou_registre = threading.Lock()
 
 
 def verrou_partie(game_id: str) -> threading.RLock:
-    """Retourne le verrou propre à cette partie."""
-
     with _verrou_registre:
         return _verrous_parties.setdefault(
             game_id,
@@ -23,15 +21,11 @@ def verrou_partie(game_id: str) -> threading.RLock:
 def nouvel_etat_partie() -> dict[str, Any]:
     return {
         "tour": 0,
-
         "actions_restantes": 1,
         "achats_restants": 1,
-
         "bonus_pieces": 0,
         "argent_restant": None,
-
         "phase_achat": False,
-
         "cartes_achetees": {},
     }
 
@@ -51,17 +45,13 @@ def obtenir_etat(game_id: str) -> dict[str, Any]:
 
 def demarrer_tour(game_id: str) -> dict[str, Any]:
     with verrou_partie(game_id):
-
         etat = obtenir_etat(game_id)
 
         etat["tour"] += 1
-
         etat["actions_restantes"] = 1
         etat["achats_restants"] = 1
-
         etat["bonus_pieces"] = 0
         etat["argent_restant"] = None
-
         etat["phase_achat"] = False
 
         return etat
@@ -73,14 +63,10 @@ def enregistrer_achat(
 ) -> None:
 
     with verrou_partie(game_id):
-
         etat = obtenir_etat(game_id)
 
         etat["cartes_achetees"][nom_carte] = (
-            etat["cartes_achetees"].get(
-                nom_carte,
-                0,
-            )
+            etat["cartes_achetees"].get(nom_carte, 0)
             + 1
         )
 
@@ -91,13 +77,9 @@ def nombre_carte_achetee(
 ) -> int:
 
     with verrou_partie(game_id):
-
-        etat = obtenir_etat(game_id)
-
-        return etat["cartes_achetees"].get(
-            nom_carte,
-            0,
-        )
+        return obtenir_etat(game_id)[
+            "cartes_achetees"
+        ].get(nom_carte, 0)
 
 
 def nombre_total_actions_achetees(
@@ -105,7 +87,6 @@ def nombre_total_actions_achetees(
 ) -> int:
 
     with verrou_partie(game_id):
-
         etat = obtenir_etat(game_id)
 
         return sum(
@@ -116,7 +97,7 @@ def nombre_total_actions_achetees(
 
 def supprimer_partie(game_id: str) -> None:
     with verrou_partie(game_id):
-        etat_tours.pop(
-            game_id,
-            None,
-        )
+        etat_tours.pop(game_id, None)
+
+    with _verrou_registre:
+        _verrous_parties.pop(game_id, None)

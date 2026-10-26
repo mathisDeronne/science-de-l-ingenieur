@@ -8,6 +8,7 @@ from typing import Any
 from dopynion.cards import Card
 from dopynion.data_model import Game
 
+from config import NOM_JOUEUR
 from game_utils import (
     calculer_argent_main,
     curses_restantes,
@@ -18,76 +19,180 @@ from game_utils import (
 from state import obtenir_etat
 
 
-#####################################################
-# Configuration des logs
-#####################################################
-
 DOSSIER_LOGS = Path(__file__).resolve().parent / "logs"
 DOSSIER_LOGS.mkdir(exist_ok=True)
 
-MAX_PARTIES_LOGS = 500
+MAX_PARTIES_LOGS = 300
 
-# RLock permet à une fonction de logs d'appeler
-# une autre fonction utilisant le même verrou.
 _verrou_logs = threading.RLock()
 
 
-#####################################################
-# Utilitaires
-#####################################################
-
-
 def maintenant() -> str:
-    return datetime.now().isoformat(
+    return datetime.now().astimezone().isoformat(
         timespec="seconds"
     )
 
 
-def nom_fichier_game(game_id: str) -> str:
-    """
-    Transforme le game_id en nom de fichier sûr.
-    """
-
+def nom_temporaire(game_id: str) -> str:
     propre = re.sub(
         r"[^a-zA-Z0-9_-]",
         "_",
         str(game_id),
     )
 
-    return propre + ".json"
+    return f"game_{propre}.json"
 
 
-def chemin_log(game_id: str) -> Path:
-    return (
-        DOSSIER_LOGS
-        / nom_fichier_game(game_id)
+def chemin_temporaire(game_id: str) -> Path:
+    return DOSSIER_LOGS / nom_temporaire(game_id)
+
+
+def charger_historique(
+    game_id: str,
+) -> dict[str, Any]:
+
+    fichier = chemin_temporaire(game_id)
+
+    if fichier.exists():
+        try:
+            return json.loads(
+                fichier.read_text(
+                    encoding="utf-8"
+                )
+            )
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    return {
+        "game_id": game_id,
+        "debut": maintenant(),
+        "fin": None,
+        "resultat": None,
+        "situations": [],
+    }
+
+
+def est_victoire(
+    historique: dict[str, Any],
+) -> bool:
+
+    situations = historique.get(
+        "situations",
+        [],
     )
 
+    if not situations:
+        return False
 
-#####################################################
-# Historique des parties
-#####################################################
+    scores = situations[-1].get(
+        "scores",
+        {},
+    )
+
+    if not scores:
+        return False
+
+    mon_score = None
+
+    for nom, score in scores.items():
+        if NOM_JOUEUR.lower() in nom.lower():
+            mon_score = score
+            break
+
+    if mon_score is None:
+        return False
+
+    return mon_score == max(scores.values())
+
+
+def nom_final(
+    historique: dict[str, Any],
+    victoire: bool,
+) -> str:
+
+    try:
+        debut = datetime.fromisoformat(
+            historique["debut"]
+        )
+    except (ValueError, TypeError, KeyError):
+        debut = datetime.now().astimezone()
+
+    prefixe = debut.strftime("%m%d%H%M")
+    resultat = "V" if victoire else "D"
+
+    return f"{prefixe}{resultat}.json"
+
+
+def chemin_final_disponible(
+    historique: dict[str, Any],
+    victoire: bool,
+) -> Path:
+
+    nom = nom_final(
+        historique,
+        victoire,
+    )
+
+    fichier = DOSSIER_LOGS / nom
+
+    if not fichier.exists():
+        return fichier
+
+    base = fichier.stem
+    numero = 2
+
+    while True:
+        candidat = (
+            DOSSIER_LOGS
+            / f"{base}_{numero}.json"
+        )
+
+        if not candidat.exists():
+            return candidat
+
+        numero += 1
+
+
+def nettoyer_anciens_logs() -> None:
+    with _verrou_logs:
+
+        # Les fichiers game_... sont des parties
+        # actuellement en cours : on ne les supprime pas.
+        fichiers = [
+            fichier
+            for fichier in DOSSIER_LOGS.glob("*.json")
+            if not fichier.name.startswith("game_")
+        ]
+
+        if len(fichiers) <= MAX_PARTIES_LOGS:
+            return
+
+        fichiers.sort(
+            key=lambda fichier: fichier.stat().st_mtime,
+            reverse=True,
+        )
+
+        for fichier in fichiers[MAX_PARTIES_LOGS:]:
+            try:
+                fichier.unlink()
+            except FileNotFoundError:
+                pass
 
 
 def initialiser_historique(
     game_id: str,
 ) -> None:
-    """
-    Crée le fichier d'historique d'une nouvelle partie.
-    """
-
-    fichier = chemin_log(game_id)
 
     historique = {
         "game_id": game_id,
         "debut": maintenant(),
         "fin": None,
+        "resultat": None,
         "situations": [],
     }
 
     with _verrou_logs:
-
-        fichier.write_text(
+        chemin_temporaire(game_id).write_text(
             json.dumps(
                 historique,
                 indent=2,
@@ -95,78 +200,26 @@ def initialiser_historique(
             ),
             encoding="utf-8",
         )
-
-        nettoyer_anciens_logs()
-
-
-def charger_historique(
-    game_id: str,
-) -> dict[str, Any]:
-    """
-    Charge l'historique d'une partie.
-    Si le fichier n'existe pas, il est créé.
-    """
-
-    fichier = chemin_log(game_id)
-
-    if not fichier.exists():
-        return {
-            "game_id": game_id,
-            "debut": maintenant(),
-            "fin": None,
-            "situations": [],
-        }
-
-    try:
-        return json.loads(
-            fichier.read_text(
-                encoding="utf-8"
-            )
-        )
-
-    except (
-        json.JSONDecodeError,
-        OSError,
-    ):
-        return {
-            "game_id": game_id,
-            "debut": maintenant(),
-            "fin": None,
-            "situations": [],
-        }
 
 
 def enregistrer_situation(
     game_id: str,
     situation: dict[str, Any],
 ) -> None:
-    """
-    Ajoute une situation à l'historique de la partie.
-    """
-
-    fichier = chemin_log(game_id)
-
-    situation = {
-        "horodatage": maintenant(),
-        **situation,
-    }
 
     with _verrou_logs:
-
         historique = charger_historique(
             game_id
         )
 
-        historique.setdefault(
-            "situations",
-            [],
-        )
-
         historique["situations"].append(
-            situation
+            {
+                "horodatage": maintenant(),
+                **situation,
+            }
         )
 
-        fichier.write_text(
+        chemin_temporaire(game_id).write_text(
             json.dumps(
                 historique,
                 indent=2,
@@ -174,28 +227,37 @@ def enregistrer_situation(
             ),
             encoding="utf-8",
         )
-
-        nettoyer_anciens_logs()
 
 
 def terminer_historique(
     game_id: str,
 ) -> None:
-    """
-    Marque la partie comme terminée.
-    """
-
-    fichier = chemin_log(game_id)
 
     with _verrou_logs:
+
+        temporaire = chemin_temporaire(
+            game_id
+        )
 
         historique = charger_historique(
             game_id
         )
 
-        historique["fin"] = maintenant()
+        victoire = est_victoire(
+            historique
+        )
 
-        fichier.write_text(
+        historique["fin"] = maintenant()
+        historique["resultat"] = (
+            "V" if victoire else "D"
+        )
+
+        final = chemin_final_disponible(
+            historique,
+            victoire,
+        )
+
+        final.write_text(
             json.dumps(
                 historique,
                 indent=2,
@@ -204,86 +266,15 @@ def terminer_historique(
             encoding="utf-8",
         )
 
+        if temporaire.exists():
+            temporaire.unlink()
+
         nettoyer_anciens_logs()
 
-
-#####################################################
-# Maximum 10 parties
-#####################################################
-
-
-def nettoyer_anciens_logs() -> None:
-    """
-    Conserve seulement les 10 parties les plus récentes.
-
-    Le classement utilise la date de début enregistrée
-    dans chaque fichier et non sa dernière modification.
-    """
-
-    with _verrou_logs:
-
-        fichiers = list(
-            DOSSIER_LOGS.glob("*.json")
+        print(
+            f">>> Log final : {final.name}",
+            flush=True,
         )
-
-        if len(fichiers) <= MAX_PARTIES_LOGS:
-            return
-
-        parties = []
-
-        for fichier in fichiers:
-
-            try:
-                contenu = json.loads(
-                    fichier.read_text(
-                        encoding="utf-8"
-                    )
-                )
-
-                debut = contenu.get(
-                    "debut",
-                    "",
-                )
-
-            except (
-                json.JSONDecodeError,
-                OSError,
-            ):
-                debut = ""
-
-            parties.append(
-                (
-                    debut,
-                    fichier,
-                )
-            )
-
-        # Plus récente en premier.
-        parties.sort(
-            key=lambda element: element[0],
-            reverse=True,
-        )
-
-        # On supprime tout ce qui dépasse les 10 parties.
-        for _, fichier in parties[
-            MAX_PARTIES_LOGS:
-        ]:
-            try:
-                fichier.unlink()
-
-                print(
-                    f">>> Ancien log supprimé : "
-                    f"{fichier.name}",
-                    flush=True,
-                )
-
-            except FileNotFoundError:
-                pass
-
-
-#####################################################
-# Affichage / sauvegarde d'une situation
-#####################################################
 
 
 def afficher_situation(
@@ -296,33 +287,47 @@ def afficher_situation(
 
     situation: dict[str, Any] = {
         "tour": etat["tour"],
+        "partie_finie": game.finished,
+        "scores": {
+            joueur.name: joueur.score
+            for joueur in game.players
+        },
+        "reserve": {
+            carte.value: {
+                "quantite": quantite,
+                "cout": Card.class_(carte).cost,
+            }
+            for carte, quantite
+            in game.stock.quantities.items()
+        },
+        "provinces_restantes":
+            provinces_restantes(game),
+        "curses_restantes":
+            curses_restantes(game),
+        "piles_vides":
+            nombre_piles_vides(game),
     }
 
     print(
         "------------- SITUATION -------------"
     )
 
-    #################################################
-    # Notre joueur
-    #################################################
+    print(
+        f"Tour          : {etat['tour']}"
+    )
 
     if moi is not None and moi.hand is not None:
-
         main = moi.hand.quantities
 
         argent_tresor = calculer_argent_main(
             game
         )
 
-        if etat["argent_restant"] is None:
-            argent_dispo = (
-                argent_tresor
-                + etat["bonus_pieces"]
-            )
-        else:
-            argent_dispo = etat[
-                "argent_restant"
-            ]
+        argent_dispo = (
+            etat["argent_restant"]
+            if etat["argent_restant"] is not None
+            else argent_tresor + etat["bonus_pieces"]
+        )
 
         actions = [
             carte.value
@@ -346,11 +351,6 @@ def afficher_situation(
         ]
 
         print(
-            f"Tour          : "
-            f"{etat['tour']}"
-        )
-
-        print(
             f"Joueur        : "
             f"{moi.name} "
             f"(score {moi.score})"
@@ -362,7 +362,6 @@ def afficher_situation(
         )
 
         for carte, quantite in main.items():
-
             infos = Card.class_(carte)
 
             print(
@@ -373,55 +372,26 @@ def afficher_situation(
             )
 
         print(
-            f"Argent trésor : "
-            f"{argent_tresor}"
+            f"Argent trésor : {argent_tresor}"
         )
-
         print(
-            f"Bonus pièces  : "
-            f"{etat['bonus_pieces']}"
+            f"Bonus pièces  : {etat['bonus_pieces']}"
         )
-
         print(
-            f"Argent dispo  : "
-            f"{argent_dispo}"
+            f"Argent dispo  : {argent_dispo}"
         )
-
         print(
-            f"Actions dispo : "
-            f"{etat['actions_restantes']}"
+            f"Actions dispo : {etat['actions_restantes']}"
         )
-
         print(
-            f"Achats dispo  : "
-            f"{etat['achats_restants']}"
+            f"Achats dispo  : {etat['achats_restants']}"
         )
-
         print(
-            f"Phase achat   : "
-            f"{etat['phase_achat']}"
+            f"Phase achat   : {etat['phase_achat']}"
         )
-
         print(
-            f"Cartes action : "
-            f"{actions or 'aucune'}"
+            f"Cartes action : {actions or 'aucune'}"
         )
-
-        print(
-            f"Provinces     : "
-            f"{provinces_restantes(game)}"
-        )
-
-        print(
-            f"Curses        : "
-            f"{curses_restantes(game)}"
-        )
-
-        print(
-            f"Piles vides   : "
-            f"{nombre_piles_vides(game)}"
-        )
-
         print(
             f"Je peux acheter : "
             f"{achetables or 'rien'}"
@@ -431,119 +401,58 @@ def afficher_situation(
             {
                 "joueur": moi.name,
                 "score": moi.score,
-
                 "main": {
                     carte.value: quantite
                     for carte, quantite
                     in main.items()
                 },
-
                 "argent_tresor":
                     argent_tresor,
-
                 "bonus_pieces":
                     etat["bonus_pieces"],
-
                 "argent_dispo":
                     argent_dispo,
-
                 "argent_restant":
                     etat["argent_restant"],
-
                 "actions_restantes":
                     etat["actions_restantes"],
-
                 "achats_restants":
                     etat["achats_restants"],
-
                 "phase_achat":
                     etat["phase_achat"],
-
                 "cartes_action":
                     actions,
-
                 "cartes_achetees":
-                    dict(
-                        etat["cartes_achetees"]
-                    ),
-
+                    dict(etat["cartes_achetees"]),
                 "achetables":
                     achetables,
-
-                "provinces_restantes":
-                    provinces_restantes(game),
-
-                "curses_restantes":
-                    curses_restantes(game),
-
-                "piles_vides":
-                    nombre_piles_vides(game),
             }
         )
 
-
-    #################################################
-    # Scores
-    #################################################
-
     print("Scores :")
 
-    scores = {}
-
     for joueur in game.players:
-
-        scores[joueur.name] = joueur.score
-
         print(
             f"   - {joueur.name:<20} "
             f"{joueur.score}"
         )
 
-
-    #################################################
-    # Réserve
-    #################################################
-
     print("Réserve :")
 
-    reserve = {}
-
     for carte, quantite in game.stock.quantities.items():
-
-        infos = Card.class_(carte)
-
-        reserve[carte.value] = {
-            "quantite": quantite,
-            "cout": infos.cost,
-        }
-
         print(
             f"   - {carte.value:<15} "
             f"x{quantite:<3} "
-            f"(coût {infos.cost})"
+            f"(coût {Card.class_(carte).cost})"
         )
 
-
-    #################################################
-    # Fin de situation
-    #################################################
-
     print(
-        f"Partie finie : "
-        f"{game.finished}"
+        f"Partie finie : {game.finished}"
     )
 
     print(
         "-------------------------------------",
         flush=True,
-    )
-
-    situation.update(
-        {
-            "scores": scores,
-            "reserve": reserve,
-            "partie_finie": game.finished,
-        }
     )
 
     enregistrer_situation(
