@@ -51,15 +51,15 @@ MAX_CARTES_ACTION = {
     "festival": 1,
     "market": 1,
     "village": 1,
-    "woodcutter": 0,
-    "witch": 1,
-    "farmingvillage": 1,
+    "woodcutter": 1,
+    "witch": 2,
+    "farmingvillage": 2,
     "councilroom": 1,
-    "distantshore": 1,
-    "hireling": 1,
+    "distantshore": 2,
+    "hireling": 2,
 }
 
-MAX_TOTAL_ACTIONS = 5
+MAX_TOTAL_ACTIONS = 8
 NB_ACTIONS_AVANT_ECONOMIE = 2
 
 PRIORITE_ACHAT_DEBUT = [
