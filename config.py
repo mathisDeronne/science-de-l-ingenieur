@@ -97,9 +97,9 @@ PRIORITE_ACHAT_MILIEU = [
 PRIORITE_ACHAT_ECONOMIE = [
     "province",
     "gold",
-    "laboratory",
     "silver",
     "witch",
+    "laboratory",
     "distantshore",
     "smithy",
     "farmingvillage",
