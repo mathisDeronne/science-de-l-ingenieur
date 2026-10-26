@@ -1,6 +1,6 @@
 # Compte rendu : Nom du jeu, cartes disponibles et routes de l'API
 
-- **Date** : 07/10/2026
+- **Date** : 08/10/2026
 - **Heure de début / fin** : 9h20 / 9h30
 - **Lieu** : Salle 302 Bordeaux Ynov Campus
 - **Enregistrement** : réunion enregistrée avec l'accord des participants
@@ -38,7 +38,7 @@ Clarifier les cartes actuellement disponibles dans le jeu ainsi que le fonctionn
 - Woodcutter ;
 - Market 5 ;
 
-| Nom | Valeur d'achat | Réponse attendue |
+| Nom | Coût | Effet |
 |---|---|---|
 |Village|3|+1 Card, +2 Actions|
 |Woodcutter|3|+1 Buy, +2$|
@@ -49,7 +49,7 @@ Clarifier les cartes actuellement disponibles dans le jeu ainsi que le fonctionn
 
 - Les cartes Trésor disponibles sont :
 
-| Nom | Valeur d'achat | Effet |
+| Nom | Coût | Effet |
 |---|---|---|
 |Copper|0|1$|
 |Silver|3|2$|
@@ -57,7 +57,7 @@ Clarifier les cartes actuellement disponibles dans le jeu ainsi que le fonctionn
 
 - Les trois niveaux classiques de cartes Victoire sont également présents :
 
-| Nom | Valeur d'achat | Effet |
+| Nom | Coût | Effet |
 |---|---|---|
 |Estate|2|1 Valeur|
 |Duchy|5|3 Valeur|
