@@ -115,15 +115,12 @@ def prioriser_premiere_witch(
     game: Game,
     game_id: str,
 ) -> list[str]:
-
     etat = obtenir_etat(game_id)
 
     if (
         etat["tour"] > 8
         or curses_restantes(game) <= 0
         or nombre_carte_achetee(game_id, "witch") > 0
-        or nombre_total_actions_achetees(game_id)
-        >= NB_ACTIONS_AVANT_ECONOMIE
         or "witch" not in priorite
     ):
         return priorite
@@ -146,6 +143,7 @@ def prioriser_premiere_witch(
     )
 
     return priorite
+
 def obtenir_priorite_achat(
     game: Game,
     game_id: str,
