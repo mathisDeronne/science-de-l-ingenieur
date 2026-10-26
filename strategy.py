@@ -5,21 +5,25 @@ from config import (
     EFFETS_ACTIONS,
     MAX_CARTES_ACTION,
     MAX_TOTAL_ACTIONS,
+    NB_ACTIONS_AVANT_ECONOMIE,
     PRIORITE_ACTION,
     PRIORITE_ACHAT_DEBUT,
-    PRIORITE_ACHAT_MILIEU,
+    PRIORITE_ACHAT_ECONOMIE,
     PRIORITE_ACHAT_FIN,
     PRIORITE_ACHAT_FIN_URGENTE,
+    PRIORITE_ACHAT_MILIEU,
     TOUR_FIN,
     TOUR_FIN_URGENTE,
-    PROVINCES_FIN,
-    PROVINCES_FIN_URGENTE,
 )
+
 from game_utils import (
     calculer_argent_main,
+    curses_restantes,
     provinces_restantes,
+    risque_fin_par_piles,
     trouver_mon_joueur,
 )
+
 from state import (
     nombre_carte_achetee,
     nombre_total_actions_achetees,
@@ -39,7 +43,10 @@ def choisir_action(
 
     etat = obtenir_etat(game_id)
 
-    if etat["phase_achat"] or etat["actions_restantes"] <= 0:
+    if (
+        etat["phase_achat"]
+        or etat["actions_restantes"] <= 0
+    ):
         return None
 
     moi = trouver_mon_joueur(game)
@@ -47,14 +54,14 @@ def choisir_action(
     if moi is None or moi.hand is None:
         return None
 
-    main = moi.hand.quantities
-
     for nom_prioritaire in PRIORITE_ACTION:
-        for carte, quantite in main.items():
+
+        for carte, quantite in moi.hand.quantities.items():
 
             if (
                 quantite > 0
-                and carte.value.lower() == nom_prioritaire
+                and carte.value.lower()
+                == nom_prioritaire
                 and Card.class_(carte).is_action
             ):
                 return carte
@@ -78,7 +85,7 @@ def appliquer_effet_action(
         },
     )
 
-    # Jouer une carte Action consomme une Action.
+    # Jouer une Action consomme une Action.
     etat["actions_restantes"] -= 1
 
     etat["actions_restantes"] += effet["actions"]
@@ -109,10 +116,12 @@ def commencer_phase_achat(
     if etat["phase_achat"]:
         return
 
-    argent_tresor = calculer_argent_main(game)
+    argent_tresor = calculer_argent_main(
+        game
+    )
 
-    # On garde le budget localement car l'arbitre
-    # peut retirer les Trésors après un premier achat.
+    # L'arbitre peut retirer les Trésors de la main
+    # après un achat : le budget est donc figé ici.
     etat["argent_restant"] = (
         argent_tresor
         + etat["bonus_pieces"]
@@ -122,7 +131,7 @@ def commencer_phase_achat(
 
 
 #####################################################
-# Limites des cartes Action
+# Limites des Actions
 #####################################################
 
 
@@ -155,7 +164,73 @@ def carte_action_autorisee(
 
 
 #####################################################
-# Priorité des achats
+# Witch
+#####################################################
+
+
+def prioriser_premiere_witch(
+    priorite: list[str],
+    game: Game,
+    game_id: str,
+) -> list[str]:
+    """
+    Jusqu'au tour 8 :
+
+        Province
+        Gold
+        Witch
+        Silver
+
+    si nous n'avons pas encore acheté Witch
+    et qu'il reste des Curse.
+
+    La règle fonctionne même à 2 joueurs.
+    """
+
+    etat = obtenir_etat(game_id)
+
+    if etat["tour"] > 8:
+        return priorite
+
+    if curses_restantes(game) <= 0:
+        return priorite
+
+    if (
+        nombre_carte_achetee(
+            game_id,
+            "witch",
+        )
+        > 0
+    ):
+        return priorite
+
+    priorite = priorite.copy()
+
+    if "witch" in priorite:
+        priorite.remove("witch")
+
+    if "gold" in priorite:
+
+        position_gold = priorite.index(
+            "gold"
+        )
+
+        priorite.insert(
+            position_gold + 1,
+            "witch",
+        )
+
+    else:
+        priorite.insert(
+            0,
+            "witch",
+        )
+
+    return priorite
+
+
+#####################################################
+# Priorité d'achat
 #####################################################
 
 
@@ -167,40 +242,117 @@ def obtenir_priorite_achat(
     etat = obtenir_etat(game_id)
 
     tour = etat["tour"]
-    provinces = provinces_restantes(game)
-    nb_actions = nombre_total_actions_achetees(game_id)
 
-    # Fin très proche : priorité maximale aux points.
+    provinces = provinces_restantes(
+        game
+    )
+
+    nb_joueurs = len(
+        game.players
+    )
+
+    nb_actions = (
+        nombre_total_actions_achetees(
+            game_id
+        )
+    )
+
+
+    #################################################
+    # Seuils selon le nombre de joueurs
+    #################################################
+
+    # Plus il y a de joueurs, plus les Provinces
+    # peuvent disparaître entre deux de nos tours.
+
+    seuil_fin = (
+        nb_joueurs + 1
+    )
+
+    seuil_fin_urgente = max(
+        1,
+        nb_joueurs - 1,
+    )
+
+
+    #################################################
+    # Fin urgente
+    #################################################
+
     if (
-        provinces <= PROVINCES_FIN_URGENTE
+        provinces <= seuil_fin_urgente
+        or risque_fin_par_piles(game)
         or tour >= TOUR_FIN_URGENTE
     ):
         return PRIORITE_ACHAT_FIN_URGENTE
 
-    # Fin de partie : Province puis Duché.
+
+    #################################################
+    # Fin normale
+    #################################################
+
     if (
-        provinces <= PROVINCES_FIN
+        provinces <= seuil_fin
         or tour >= TOUR_FIN
     ):
         return PRIORITE_ACHAT_FIN
 
-    # Après 2 cartes Action, on renforce surtout l'économie.
-    if nb_actions >= 2:
-        return [
-            "province",
-            "gold",
-            "silver",
-            "laboratory",
-            "smithy",
-            "festival",
-            "market",
-            "village",
-        ]
+
+    #################################################
+    # Moteur déjà construit
+    #################################################
+
+    if (
+        nb_actions
+        >= NB_ACTIONS_AVANT_ECONOMIE
+    ):
+
+        priorite = (
+            PRIORITE_ACHAT_ECONOMIE.copy()
+        )
+
+        return prioriser_premiere_witch(
+            priorite,
+            game,
+            game_id,
+        )
+
+
+    #################################################
+    # Début
+    #################################################
 
     if tour <= 6:
-        return PRIORITE_ACHAT_DEBUT
 
-    return PRIORITE_ACHAT_MILIEU
+        priorite = (
+            PRIORITE_ACHAT_DEBUT.copy()
+        )
+
+        return prioriser_premiere_witch(
+            priorite,
+            game,
+            game_id,
+        )
+
+
+    #################################################
+    # Milieu
+    #################################################
+
+    priorite = (
+        PRIORITE_ACHAT_MILIEU.copy()
+    )
+
+    return prioriser_premiere_witch(
+        priorite,
+        game,
+        game_id,
+    )
+
+
+#####################################################
+# Achat
+#####################################################
 
 
 def choisir_achat(
@@ -220,10 +372,12 @@ def choisir_achat(
 
     achetables = [
         carte
-        for carte, quantite in game.stock.quantities.items()
+        for carte, quantite
+        in game.stock.quantities.items()
         if (
             quantite > 0
-            and Card.class_(carte).cost <= argent
+            and Card.class_(carte).cost
+            <= argent
         )
     ]
 
@@ -233,6 +387,7 @@ def choisir_achat(
     )
 
     for nom_prioritaire in priorite:
+
         for carte in achetables:
 
             nom = carte.value.lower()
@@ -251,5 +406,6 @@ def choisir_achat(
 
             return carte
 
-    # On préfère ne rien acheter plutôt qu'un Copper inutile.
+    # On n'achète volontairement ni Copper
+    # ni Curse si rien d'intéressant n'est disponible.
     return None

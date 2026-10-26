@@ -25,14 +25,22 @@ from fastapi.responses import (
 from pydantic import BaseModel
 
 from config import NOM_JOUEUR
-from logger_utils import afficher_situation
+
+from logger_utils import (
+    afficher_situation,
+    initialiser_historique,
+    terminer_historique,
+)
+
 from state import (
     demarrer_tour,
     enregistrer_achat,
     initialiser_partie,
     obtenir_etat,
     supprimer_partie,
+    verrou_partie,
 )
+
 from strategy import (
     appliquer_effet_action,
     choisir_action,
@@ -101,7 +109,8 @@ def log_decision(
 
     print(
         f">>> Décision ({route}) "
-        f"partie={game_id} : {decision}",
+        f"partie={game_id} : "
+        f"{decision}",
         flush=True,
     )
 
@@ -147,7 +156,7 @@ GameIdDependency = Annotated[
 
 
 #####################################################
-# Erreurs
+# Gestion des erreurs
 #####################################################
 
 
@@ -173,7 +182,7 @@ def unknown_exception_handler(
 
 
 #####################################################
-# Documentation
+# Affichage du code
 #####################################################
 
 
@@ -183,30 +192,55 @@ def unknown_exception_handler(
 )
 def root() -> str:
 
-    header = (
-        "<html>"
-        "<head><title>Dopynion template</title></head>"
-        "<body>"
-        "<h1>Dopynion documentation</h1>"
-        '<p><a href="/docs">Documentation API</a></p>'
-        "<pre>"
-    )
+    fichiers = [
+        "main.py",
+        "config.py",
+        "state.py",
+        "game_utils.py",
+        "strategy.py",
+        "logger_utils.py",
+    ]
 
-    footer = "</pre></body></html>"
+    contenu = [
+        "<html><body>",
+        "<h1>Le 4ème Empire</h1>",
+        '<p><a href="/docs">'
+        "Documentation API"
+        "</a></p>",
+    ]
 
-    return (
-        header
-        + html.escape(
-            Path(__file__).read_text(
-                encoding="utf-8"
+    dossier = Path(__file__).resolve().parent
+
+    for nom in fichiers:
+
+        fichier = dossier / nom
+
+        if not fichier.exists():
+            continue
+
+        contenu.append(
+            f"<h2>{html.escape(nom)}</h2>"
+        )
+
+        contenu.append("<pre>")
+
+        contenu.append(
+            html.escape(
+                fichier.read_text(
+                    encoding="utf-8"
+                )
             )
         )
-        + footer
-    )
+
+        contenu.append("</pre>")
+
+    contenu.append("</body></html>")
+
+    return "".join(contenu)
 
 
 #####################################################
-# Partie
+# Nom
 #####################################################
 
 
@@ -215,12 +249,31 @@ def name() -> str:
     return NOM_JOUEUR
 
 
+#####################################################
+# Début de partie
+#####################################################
+
+
 @app.get("/start_game")
 def start_game(
     game_id: GameIdDependency,
 ) -> DopynionResponseStr:
 
-    initialiser_partie(game_id)
+    # Etat stratégique de cette partie.
+    initialiser_partie(
+        game_id
+    )
+
+    # Nouveau fichier d'historique.
+    initialiser_historique(
+        game_id
+    )
+
+    print(
+        f">>> Nouvelle partie : "
+        f"{game_id}",
+        flush=True,
+    )
 
     return DopynionResponseStr(
         game_id=game_id,
@@ -228,17 +281,24 @@ def start_game(
     )
 
 
+#####################################################
+# Début de tour
+#####################################################
+
+
 @app.get("/start_turn")
 def start_turn(
     game_id: GameIdDependency,
 ) -> DopynionResponseStr:
 
-    etat = demarrer_tour(game_id)
+    etat = demarrer_tour(
+        game_id
+    )
 
     print(
         f">>> Nouveau tour "
         f"{etat['tour']} | "
-        f"Actions=1 | Achats=1",
+        f"partie={game_id}",
         flush=True,
     )
 
@@ -259,16 +319,142 @@ def play(
     game_id: GameIdDependency,
 ) -> DopynionResponseStr:
 
-    etat = obtenir_etat(game_id)
+    # Deux parties différentes peuvent travailler
+    # en parallèle.
+    #
+    # Par contre une seule requête modifie à la fois
+    # l'état d'un même game_id.
+    with verrou_partie(game_id):
 
-    afficher_situation(
-        game,
-        game_id,
-    )
+        etat = obtenir_etat(
+            game_id
+        )
+
+        afficher_situation(
+            game,
+            game_id,
+        )
 
 
-    # Partie terminée
-    if game.finished:
+        #################################################
+        # Partie terminée
+        #################################################
+
+        if game.finished:
+
+            decision = "END_TURN"
+
+            log_decision(
+                game_id,
+                "/play",
+                decision,
+            )
+
+            return DopynionResponseStr(
+                game_id=game_id,
+                decision=decision,
+            )
+
+
+        #################################################
+        # Phase Action
+        #################################################
+
+        if (
+            not etat["phase_achat"]
+            and etat["actions_restantes"] > 0
+        ):
+
+            carte_action = choisir_action(
+                game,
+                game_id,
+            )
+
+            if carte_action is not None:
+
+                appliquer_effet_action(
+                    game_id,
+                    carte_action,
+                )
+
+                decision = (
+                    f"ACTION "
+                    f"{carte_action.value}"
+                )
+
+                log_decision(
+                    game_id,
+                    "/play",
+                    decision,
+                )
+
+                return DopynionResponseStr(
+                    game_id=game_id,
+                    decision=decision,
+                )
+
+            commencer_phase_achat(
+                game,
+                game_id,
+            )
+
+        elif not etat["phase_achat"]:
+
+            commencer_phase_achat(
+                game,
+                game_id,
+            )
+
+
+        #################################################
+        # Phase Achat
+        #################################################
+
+        if etat["achats_restants"] > 0:
+
+            carte = choisir_achat(
+                game,
+                game_id,
+            )
+
+            if carte is not None:
+
+                cout = Card.class_(
+                    carte
+                ).cost
+
+                etat[
+                    "argent_restant"
+                ] -= cout
+
+                etat[
+                    "achats_restants"
+                ] -= 1
+
+                enregistrer_achat(
+                    game_id,
+                    carte.value.lower(),
+                )
+
+                decision = (
+                    f"BUY {carte.value}"
+                )
+
+                log_decision(
+                    game_id,
+                    "/play",
+                    decision,
+                )
+
+                return DopynionResponseStr(
+                    game_id=game_id,
+                    decision=decision,
+                )
+
+
+        #################################################
+        # Fin du tour
+        #################################################
 
         decision = "END_TURN"
 
@@ -284,111 +470,9 @@ def play(
         )
 
 
-    #################################################
-    # Phase Action
-    #################################################
-
-    if (
-        not etat["phase_achat"]
-        and etat["actions_restantes"] > 0
-    ):
-
-        carte_action = choisir_action(
-            game,
-            game_id,
-        )
-
-        if carte_action is not None:
-
-            appliquer_effet_action(
-                game_id,
-                carte_action,
-            )
-
-            decision = (
-                f"ACTION "
-                f"{carte_action.value}"
-            )
-
-            log_decision(
-                game_id,
-                "/play",
-                decision,
-            )
-
-            return DopynionResponseStr(
-                game_id=game_id,
-                decision=decision,
-            )
-
-        commencer_phase_achat(
-            game,
-            game_id,
-        )
-
-    elif not etat["phase_achat"]:
-
-        commencer_phase_achat(
-            game,
-            game_id,
-        )
-
-
-    #################################################
-    # Phase Achat
-    #################################################
-
-    if etat["achats_restants"] > 0:
-
-        carte = choisir_achat(
-            game,
-            game_id,
-        )
-
-        if carte is not None:
-
-            cout = Card.class_(carte).cost
-
-            etat["argent_restant"] -= cout
-            etat["achats_restants"] -= 1
-
-            enregistrer_achat(
-                game_id,
-                carte.value.lower(),
-            )
-
-            decision = (
-                f"BUY {carte.value}"
-            )
-
-            log_decision(
-                game_id,
-                "/play",
-                decision,
-            )
-
-            return DopynionResponseStr(
-                game_id=game_id,
-                decision=decision,
-            )
-
-
-    #################################################
-    # Fin du tour
-    #################################################
-
-    decision = "END_TURN"
-
-    log_decision(
-        game_id,
-        "/play",
-        decision,
-    )
-
-    return DopynionResponseStr(
-        game_id=game_id,
-        decision=decision,
-    )
+#####################################################
+# Fin de partie
+#####################################################
 
 
 @app.get("/end_game")
@@ -396,7 +480,21 @@ def end_game(
     game_id: GameIdDependency,
 ) -> DopynionResponseStr:
 
-    supprimer_partie(game_id)
+    # On marque d'abord le fichier comme terminé.
+    terminer_historique(
+        game_id
+    )
+
+    # Puis on supprime l'état RAM.
+    supprimer_partie(
+        game_id
+    )
+
+    print(
+        f">>> Fin de partie : "
+        f"{game_id}",
+        flush=True,
+    )
 
     return DopynionResponseStr(
         game_id=game_id,
@@ -405,11 +503,13 @@ def end_game(
 
 
 #####################################################
-# Routes du template
+# Routes spéciales
 #####################################################
 
 
-@app.post("/confirm_discard_card_from_hand")
+@app.post(
+    "/confirm_discard_card_from_hand"
+)
 async def confirm_discard_card_from_hand(
     game_id: GameIdDependency,
     _decision_input: CardNameAndHand,
@@ -421,7 +521,9 @@ async def confirm_discard_card_from_hand(
     )
 
 
-@app.post("/discard_card_from_hand")
+@app.post(
+    "/discard_card_from_hand"
+)
 async def discard_card_from_hand(
     game_id: GameIdDependency,
     decision_input: Hand,
@@ -433,7 +535,9 @@ async def discard_card_from_hand(
     )
 
 
-@app.post("/confirm_trash_card_from_hand")
+@app.post(
+    "/confirm_trash_card_from_hand"
+)
 async def confirm_trash_card_from_hand(
     game_id: GameIdDependency,
     _decision_input: CardNameAndHand,
@@ -445,7 +549,9 @@ async def confirm_trash_card_from_hand(
     )
 
 
-@app.post("/trash_card_from_hand")
+@app.post(
+    "/trash_card_from_hand"
+)
 async def trash_card_from_hand(
     game_id: GameIdDependency,
     decision_input: Hand,
@@ -457,7 +563,9 @@ async def trash_card_from_hand(
     )
 
 
-@app.post("/confirm_discard_deck")
+@app.post(
+    "/confirm_discard_deck"
+)
 async def confirm_discard_deck(
     game_id: GameIdDependency,
 ) -> DopynionResponseBool:
@@ -468,7 +576,9 @@ async def confirm_discard_deck(
     )
 
 
-@app.post("/choose_card_to_receive_in_discard")
+@app.post(
+    "/choose_card_to_receive_in_discard"
+)
 async def choose_card_to_receive_in_discard(
     game_id: GameIdDependency,
     decision_input: PossibleCards,
@@ -480,7 +590,9 @@ async def choose_card_to_receive_in_discard(
     )
 
 
-@app.post("/choose_card_to_receive_in_deck")
+@app.post(
+    "/choose_card_to_receive_in_deck"
+)
 async def choose_card_to_receive_in_deck(
     game_id: GameIdDependency,
     decision_input: PossibleCards,
@@ -492,7 +604,9 @@ async def choose_card_to_receive_in_deck(
     )
 
 
-@app.post("/skip_card_reception_in_hand")
+@app.post(
+    "/skip_card_reception_in_hand"
+)
 async def skip_card_reception_in_hand(
     game_id: GameIdDependency,
     _decision_input: CardNameAndHand,
@@ -504,7 +618,9 @@ async def skip_card_reception_in_hand(
     )
 
 
-@app.post("/trash_money_card_for_better_money_card")
+@app.post(
+    "/trash_money_card_for_better_money_card"
+)
 async def trash_money_card_for_better_money_card(
     game_id: GameIdDependency,
     decision_input: MoneyCardsInHand,
