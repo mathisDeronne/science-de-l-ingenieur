@@ -12,7 +12,7 @@
 
 ## Ordre du jour initial
 
-Non précisé. La réunion a débuté par l'annonce de deux nouvelles informations « importantes pour aujourd'hui ».
+durée d'une partie et durée d'une requete.
 
 ## Point a voir 
 
