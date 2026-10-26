@@ -12,7 +12,7 @@
 
 ## Ordre du jour initial
 
-Non précisé. La réunion a débuté par l'annonce de deux nouvelles informations « importantes pour aujourd'hui ».
+Présentation des nouvelles cartes et de leurs effets.
 
 ## Sujets abordés
 
