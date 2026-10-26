@@ -120,7 +120,13 @@ def nom_final(
     prefixe = debut.strftime("%m%d%H%M")
     resultat = "V" if victoire else "D"
 
-    return f"{prefixe}{resultat}.json"
+    game_id = re.sub(
+        r"[^a-zA-Z0-9_-]",
+        "_",
+        str(historique.get("game_id", "unknown")),
+    )
+
+    return f"{prefixe}{resultat}_{game_id}.json"
 
 
 def chemin_final_disponible(
@@ -128,30 +134,10 @@ def chemin_final_disponible(
     victoire: bool,
 ) -> Path:
 
-    nom = nom_final(
+    return DOSSIER_LOGS / nom_final(
         historique,
         victoire,
     )
-
-    fichier = DOSSIER_LOGS / nom
-
-    if not fichier.exists():
-        return fichier
-
-    base = fichier.stem
-    numero = 2
-
-    while True:
-        candidat = (
-            DOSSIER_LOGS
-            / f"{base}_{numero}.json"
-        )
-
-        if not candidat.exists():
-            return candidat
-
-        numero += 1
-
 
 def nettoyer_anciens_logs() -> None:
     with _verrou_logs:
