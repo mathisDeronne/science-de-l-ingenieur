@@ -25,7 +25,13 @@ from fastapi.responses import (
 from pydantic import BaseModel
 
 from config import NOM_JOUEUR
-from logger_utils import afficher_situation
+
+from logger_utils import (
+    afficher_situation,
+    initialiser_historique,
+    terminer_historique,
+)
+
 from state import (
     demarrer_tour,
     enregistrer_achat,
@@ -34,6 +40,7 @@ from state import (
     supprimer_partie,
     verrou_partie,
 )
+
 from strategy import (
     appliquer_effet_action,
     choisir_action,
@@ -102,7 +109,8 @@ def log_decision(
 
     print(
         f">>> Décision ({route}) "
-        f"partie={game_id} : {decision}",
+        f"partie={game_id} : "
+        f"{decision}",
         flush=True,
     )
 
@@ -196,7 +204,9 @@ def root() -> str:
     contenu = [
         "<html><body>",
         "<h1>Le 4ème Empire</h1>",
-        '<p><a href="/docs">Documentation API</a></p>',
+        '<p><a href="/docs">'
+        "Documentation API"
+        "</a></p>",
     ]
 
     dossier = Path(__file__).resolve().parent
@@ -230,7 +240,7 @@ def root() -> str:
 
 
 #####################################################
-# Partie
+# Nom
 #####################################################
 
 
@@ -239,12 +249,31 @@ def name() -> str:
     return NOM_JOUEUR
 
 
+#####################################################
+# Début de partie
+#####################################################
+
+
 @app.get("/start_game")
 def start_game(
     game_id: GameIdDependency,
 ) -> DopynionResponseStr:
 
-    initialiser_partie(game_id)
+    # Etat stratégique de cette partie.
+    initialiser_partie(
+        game_id
+    )
+
+    # Nouveau fichier d'historique.
+    initialiser_historique(
+        game_id
+    )
+
+    print(
+        f">>> Nouvelle partie : "
+        f"{game_id}",
+        flush=True,
+    )
 
     return DopynionResponseStr(
         game_id=game_id,
@@ -252,12 +281,19 @@ def start_game(
     )
 
 
+#####################################################
+# Début de tour
+#####################################################
+
+
 @app.get("/start_turn")
 def start_turn(
     game_id: GameIdDependency,
 ) -> DopynionResponseStr:
 
-    etat = demarrer_tour(game_id)
+    etat = demarrer_tour(
+        game_id
+    )
 
     print(
         f">>> Nouveau tour "
@@ -283,11 +319,16 @@ def play(
     game_id: GameIdDependency,
 ) -> DopynionResponseStr:
 
-    # Une seule requête à la fois pour une même partie,
-    # mais plusieurs game_id peuvent jouer en parallèle.
+    # Deux parties différentes peuvent travailler
+    # en parallèle.
+    #
+    # Par contre une seule requête modifie à la fois
+    # l'état d'un même game_id.
     with verrou_partie(game_id):
 
-        etat = obtenir_etat(game_id)
+        etat = obtenir_etat(
+            game_id
+        )
 
         afficher_situation(
             game,
@@ -378,10 +419,17 @@ def play(
 
             if carte is not None:
 
-                cout = Card.class_(carte).cost
+                cout = Card.class_(
+                    carte
+                ).cost
 
-                etat["argent_restant"] -= cout
-                etat["achats_restants"] -= 1
+                etat[
+                    "argent_restant"
+                ] -= cout
+
+                etat[
+                    "achats_restants"
+                ] -= 1
 
                 enregistrer_achat(
                     game_id,
@@ -432,7 +480,21 @@ def end_game(
     game_id: GameIdDependency,
 ) -> DopynionResponseStr:
 
-    supprimer_partie(game_id)
+    # On marque d'abord le fichier comme terminé.
+    terminer_historique(
+        game_id
+    )
+
+    # Puis on supprime l'état RAM.
+    supprimer_partie(
+        game_id
+    )
+
+    print(
+        f">>> Fin de partie : "
+        f"{game_id}",
+        flush=True,
+    )
 
     return DopynionResponseStr(
         game_id=game_id,
@@ -441,11 +503,13 @@ def end_game(
 
 
 #####################################################
-# Routes spéciales du template
+# Routes spéciales
 #####################################################
 
 
-@app.post("/confirm_discard_card_from_hand")
+@app.post(
+    "/confirm_discard_card_from_hand"
+)
 async def confirm_discard_card_from_hand(
     game_id: GameIdDependency,
     _decision_input: CardNameAndHand,
@@ -457,7 +521,9 @@ async def confirm_discard_card_from_hand(
     )
 
 
-@app.post("/discard_card_from_hand")
+@app.post(
+    "/discard_card_from_hand"
+)
 async def discard_card_from_hand(
     game_id: GameIdDependency,
     decision_input: Hand,
@@ -469,7 +535,9 @@ async def discard_card_from_hand(
     )
 
 
-@app.post("/confirm_trash_card_from_hand")
+@app.post(
+    "/confirm_trash_card_from_hand"
+)
 async def confirm_trash_card_from_hand(
     game_id: GameIdDependency,
     _decision_input: CardNameAndHand,
@@ -481,7 +549,9 @@ async def confirm_trash_card_from_hand(
     )
 
 
-@app.post("/trash_card_from_hand")
+@app.post(
+    "/trash_card_from_hand"
+)
 async def trash_card_from_hand(
     game_id: GameIdDependency,
     decision_input: Hand,
@@ -493,7 +563,9 @@ async def trash_card_from_hand(
     )
 
 
-@app.post("/confirm_discard_deck")
+@app.post(
+    "/confirm_discard_deck"
+)
 async def confirm_discard_deck(
     game_id: GameIdDependency,
 ) -> DopynionResponseBool:
@@ -504,7 +576,9 @@ async def confirm_discard_deck(
     )
 
 
-@app.post("/choose_card_to_receive_in_discard")
+@app.post(
+    "/choose_card_to_receive_in_discard"
+)
 async def choose_card_to_receive_in_discard(
     game_id: GameIdDependency,
     decision_input: PossibleCards,
@@ -516,7 +590,9 @@ async def choose_card_to_receive_in_discard(
     )
 
 
-@app.post("/choose_card_to_receive_in_deck")
+@app.post(
+    "/choose_card_to_receive_in_deck"
+)
 async def choose_card_to_receive_in_deck(
     game_id: GameIdDependency,
     decision_input: PossibleCards,
@@ -528,7 +604,9 @@ async def choose_card_to_receive_in_deck(
     )
 
 
-@app.post("/skip_card_reception_in_hand")
+@app.post(
+    "/skip_card_reception_in_hand"
+)
 async def skip_card_reception_in_hand(
     game_id: GameIdDependency,
     _decision_input: CardNameAndHand,
@@ -540,7 +618,9 @@ async def skip_card_reception_in_hand(
     )
 
 
-@app.post("/trash_money_card_for_better_money_card")
+@app.post(
+    "/trash_money_card_for_better_money_card"
+)
 async def trash_money_card_for_better_money_card(
     game_id: GameIdDependency,
     decision_input: MoneyCardsInHand,
