@@ -43,16 +43,12 @@ def nom_temporaire(game_id: str) -> str:
 
 
 def chemin_temporaire(game_id: str) -> Path:
-    return (
-        DOSSIER_LOGS
-        / nom_temporaire(game_id)
-    )
+    return DOSSIER_LOGS / nom_temporaire(game_id)
 
 
 def charger_historique(
     game_id: str,
 ) -> dict[str, Any]:
-
     fichier = chemin_temporaire(game_id)
 
     if fichier.exists():
@@ -80,7 +76,6 @@ def charger_historique(
 def est_victoire(
     historique: dict[str, Any],
 ) -> bool:
-
     situations = historique.get(
         "situations",
         [],
@@ -117,7 +112,6 @@ def nom_final(
     historique: dict[str, Any],
     victoire: bool,
 ) -> str:
-
     try:
         debut = datetime.fromisoformat(
             historique["debut"]
@@ -129,15 +123,8 @@ def nom_final(
     ):
         debut = datetime.now().astimezone()
 
-    prefixe = debut.strftime(
-        "%m%d%H%M"
-    )
-
-    resultat = (
-        "V"
-        if victoire
-        else "D"
-    )
+    prefixe = debut.strftime("%m%d%H%M")
+    resultat = "V" if victoire else "D"
 
     game_id = re.sub(
         r"[^a-zA-Z0-9_-]",
@@ -159,7 +146,6 @@ def nom_final(
 
 def nettoyer_anciens_logs() -> None:
     with _verrou_logs:
-
         fichiers = [
             fichier
             for fichier
@@ -190,7 +176,6 @@ def nettoyer_anciens_logs() -> None:
 def initialiser_historique(
     game_id: str,
 ) -> None:
-
     historique = {
         "game_id": game_id,
         "debut": maintenant(),
@@ -216,7 +201,6 @@ def enregistrer_situation(
     game_id: str,
     situation: dict[str, Any],
 ) -> None:
-
     with _verrou_logs:
         historique = charger_historique(
             game_id
@@ -244,9 +228,7 @@ def enregistrer_situation(
 def terminer_historique(
     game_id: str,
 ) -> None:
-
     with _verrou_logs:
-
         temporaire = chemin_temporaire(
             game_id
         )
@@ -261,9 +243,7 @@ def terminer_historique(
 
         historique["fin"] = maintenant()
         historique["resultat"] = (
-            "V"
-            if victoire
-            else "D"
+            "V" if victoire else "D"
         )
 
         final = (
@@ -289,8 +269,7 @@ def terminer_historique(
         nettoyer_anciens_logs()
 
         print(
-            f">>> Log final : "
-            f"{final.name}",
+            f">>> Log final : {final.name}",
             flush=True,
         )
 
@@ -299,7 +278,6 @@ def afficher_situation(
     game: Game,
     game_id: str,
 ) -> None:
-
     moi = trouver_mon_joueur(game)
     etat = obtenir_etat(game_id)
 
@@ -393,32 +371,25 @@ def afficher_situation(
             )
 
         print(
-            f"Argent trésor : "
-            f"{argent_tresor}"
+            f"Argent trésor : {argent_tresor}"
         )
         print(
-            f"Bonus pièces  : "
-            f"{etat['bonus_pieces']}"
+            f"Bonus pièces  : {etat['bonus_pieces']}"
         )
         print(
-            f"Argent dispo  : "
-            f"{argent_dispo}"
+            f"Argent dispo  : {argent_dispo}"
         )
         print(
-            f"Actions dispo : "
-            f"{etat['actions_restantes']}"
+            f"Actions dispo : {etat['actions_restantes']}"
         )
         print(
-            f"Achats dispo  : "
-            f"{etat['achats_restants']}"
+            f"Achats dispo  : {etat['achats_restants']}"
         )
         print(
-            f"Phase achat   : "
-            f"{etat['phase_achat']}"
+            f"Phase achat   : {etat['phase_achat']}"
         )
         print(
-            f"Cartes action : "
-            f"{actions or 'aucune'}"
+            f"Cartes action : {actions or 'aucune'}"
         )
         print(
             f"Je peux acheter : "
@@ -478,8 +449,7 @@ def afficher_situation(
         )
 
     print(
-        f"Partie finie : "
-        f"{game.finished}"
+        f"Partie finie : {game.finished}"
     )
 
     print(

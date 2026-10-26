@@ -61,13 +61,11 @@ def enregistrer_achat(
     game_id: str,
     nom_carte: str,
 ) -> None:
-
     with verrou_partie(game_id):
         etat = obtenir_etat(game_id)
 
         etat["cartes_achetees"][nom_carte] = (
-            etat["cartes_achetees"].get(nom_carte, 0)
-            + 1
+            etat["cartes_achetees"].get(nom_carte, 0) + 1
         )
 
 
@@ -75,7 +73,6 @@ def nombre_carte_achetee(
     game_id: str,
     nom_carte: str,
 ) -> int:
-
     with verrou_partie(game_id):
         return obtenir_etat(game_id)[
             "cartes_achetees"
@@ -85,7 +82,6 @@ def nombre_carte_achetee(
 def nombre_total_actions_achetees(
     game_id: str,
 ) -> int:
-
     with verrou_partie(game_id):
         etat = obtenir_etat(game_id)
 

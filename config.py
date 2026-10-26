@@ -16,6 +16,7 @@ def obtenir_nom_joueur(host: str) -> str:
 
     return NOM_BOT_DEV
 
+
 EFFETS_ACTIONS = {
     "festival":       {"actions": 2, "achats": 1, "pieces": 2},
     "smithy":         {"actions": 0, "achats": 0, "pieces": 0},

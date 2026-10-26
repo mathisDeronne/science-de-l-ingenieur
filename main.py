@@ -101,7 +101,6 @@ def log_decision(
     route: str,
     decision: Any,
 ) -> None:
-
     print(
         f">>> Décision ({route}) "
         f"partie={game_id} : "
@@ -130,7 +129,6 @@ def get_game_id(
         description="ID of the game"
     ),
 ) -> str:
-
     return x_game_id
 
 
@@ -145,7 +143,6 @@ def unknown_exception_handler(
     _request: Request,
     exc: Exception,
 ) -> JSONResponse:
-
     print(
         exc.__class__.__name__,
         str(exc),
@@ -165,11 +162,20 @@ def unknown_exception_handler(
     "/",
     response_class=HTMLResponse,
 )
-def root() -> str:
-    return """
+def root(
+    request: Request,
+) -> str:
+    nom = obtenir_nom_joueur(
+        request.headers.get(
+            "host",
+            "",
+        )
+    )
+
+    return f"""
     <html>
         <body>
-            <h1>Le 4ème Empire</h1>
+            <h1>{nom}</h1>
             <p>Bot Dopynion actif.</p>
         </body>
     </html>
@@ -177,9 +183,14 @@ def root() -> str:
 
 
 @app.get("/name")
-def name(request: Request) -> str:
+def name(
+    request: Request,
+) -> str:
     return obtenir_nom_joueur(
-        request.headers.get("host", "")
+        request.headers.get(
+            "host",
+            "",
+        )
     )
 
 
@@ -187,7 +198,6 @@ def name(request: Request) -> str:
 def start_game(
     game_id: GameIdDependency,
 ) -> DopynionResponseStr:
-
     initialiser_partie(
         game_id
     )
@@ -206,7 +216,6 @@ def start_game(
 def start_turn(
     game_id: GameIdDependency,
 ) -> DopynionResponseStr:
-
     etat = demarrer_tour(
         game_id
     )
@@ -229,9 +238,7 @@ def play(
     game: Game,
     game_id: GameIdDependency,
 ) -> DopynionResponseStr:
-
     with verrou_partie(game_id):
-
         etat = obtenir_etat(
             game_id
         )
@@ -318,7 +325,6 @@ def play(
             )
 
         if etat["achats_restants"] > 0:
-
             carte = choisir_achat(
                 game,
                 game_id,
@@ -375,7 +381,6 @@ def play(
 def end_game(
     game_id: GameIdDependency,
 ) -> DopynionResponseStr:
-
     terminer_historique(
         game_id
     )
@@ -397,7 +402,6 @@ async def confirm_discard_card_from_hand(
     game_id: GameIdDependency,
     _decision_input: CardNameAndHand,
 ) -> DopynionResponseBool:
-
     return DopynionResponseBool(
         game_id=game_id,
         decision=True,
@@ -411,7 +415,6 @@ async def discard_card_from_hand(
     game_id: GameIdDependency,
     decision_input: Hand,
 ) -> DopynionResponseCardName:
-
     return DopynionResponseCardName(
         game_id=game_id,
         decision=decision_input.hand[0],
@@ -425,7 +428,6 @@ async def confirm_trash_card_from_hand(
     game_id: GameIdDependency,
     _decision_input: CardNameAndHand,
 ) -> DopynionResponseBool:
-
     return DopynionResponseBool(
         game_id=game_id,
         decision=True,
@@ -439,7 +441,6 @@ async def trash_card_from_hand(
     game_id: GameIdDependency,
     decision_input: Hand,
 ) -> DopynionResponseCardName:
-
     return DopynionResponseCardName(
         game_id=game_id,
         decision=decision_input.hand[0],
@@ -452,7 +453,6 @@ async def trash_card_from_hand(
 async def confirm_discard_deck(
     game_id: GameIdDependency,
 ) -> DopynionResponseBool:
-
     return DopynionResponseBool(
         game_id=game_id,
         decision=True,
@@ -466,7 +466,6 @@ async def choose_card_to_receive_in_discard(
     game_id: GameIdDependency,
     decision_input: PossibleCards,
 ) -> DopynionResponseCardName:
-
     return DopynionResponseCardName(
         game_id=game_id,
         decision=decision_input.possible_cards[0],
@@ -480,7 +479,6 @@ async def choose_card_to_receive_in_deck(
     game_id: GameIdDependency,
     decision_input: PossibleCards,
 ) -> DopynionResponseCardName:
-
     return DopynionResponseCardName(
         game_id=game_id,
         decision=decision_input.possible_cards[0],
@@ -494,7 +492,6 @@ async def skip_card_reception_in_hand(
     game_id: GameIdDependency,
     _decision_input: CardNameAndHand,
 ) -> DopynionResponseBool:
-
     return DopynionResponseBool(
         game_id=game_id,
         decision=True,
@@ -508,7 +505,6 @@ async def trash_money_card_for_better_money_card(
     game_id: GameIdDependency,
     decision_input: MoneyCardsInHand,
 ) -> DopynionResponseCardName:
-
     return DopynionResponseCardName(
         game_id=game_id,
         decision=decision_input.money_in_hand[0],

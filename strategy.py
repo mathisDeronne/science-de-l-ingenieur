@@ -31,7 +31,6 @@ def choisir_action(
     game: Game,
     game_id: str,
 ) -> CardName | None:
-
     etat = obtenir_etat(game_id)
 
     if (
@@ -47,7 +46,6 @@ def choisir_action(
 
     for nom in PRIORITE_ACTION:
         for carte, quantite in moi.hand.quantities.items():
-
             if (
                 quantite > 0
                 and carte.value.lower() == nom
@@ -62,7 +60,6 @@ def appliquer_effet_action(
     game_id: str,
     carte: CardName,
 ) -> None:
-
     etat = obtenir_etat(game_id)
 
     effet = EFFETS_ACTIONS.get(
@@ -74,10 +71,7 @@ def appliquer_effet_action(
         },
     )
 
-    etat["actions_restantes"] += (
-        effet["actions"] - 1
-    )
-
+    etat["actions_restantes"] += effet["actions"] - 1
     etat["achats_restants"] += effet["achats"]
     etat["bonus_pieces"] += effet["pieces"]
 
@@ -86,7 +80,6 @@ def commencer_phase_achat(
     game: Game,
     game_id: str,
 ) -> None:
-
     etat = obtenir_etat(game_id)
 
     if etat["phase_achat"]:
@@ -104,7 +97,6 @@ def carte_action_autorisee(
     game_id: str,
     nom: str,
 ) -> bool:
-
     limite = MAX_CARTES_ACTION.get(
         nom,
         0,
@@ -124,7 +116,6 @@ def prioriser_premiere_witch(
     game: Game,
     game_id: str,
 ) -> list[str]:
-
     etat = obtenir_etat(game_id)
 
     if (
@@ -153,7 +144,6 @@ def prioriser_premiere_witch(
             if "province" in priorite
             else 0
         )
-
     else:
         position = (
             priorite.index("gold") + 1
@@ -173,7 +163,6 @@ def obtenir_priorite_achat(
     game: Game,
     game_id: str,
 ) -> list[str]:
-
     etat = obtenir_etat(game_id)
 
     nb_joueurs = len(game.players)
@@ -214,7 +203,6 @@ def choisir_achat(
     game: Game,
     game_id: str,
 ) -> CardName | None:
-
     etat = obtenir_etat(game_id)
 
     if (

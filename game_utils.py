@@ -3,14 +3,11 @@ import re
 from dopynion.cards import Card
 from dopynion.data_model import Game
 
-from config import (
-    NOM_BOT_OFFICIEL,
-    NOM_JOUEUR,
-)
+from config import NOM_BOT_OFFICIEL
 
 
 def trouver_mon_joueur(game: Game):
-    moi = next(
+    return next(
         (
             joueur
             for joueur in game.players
@@ -18,19 +15,6 @@ def trouver_mon_joueur(game: Game):
         ),
         None,
     )
-
-    if moi is None:
-        moi = next(
-            (
-                joueur
-                for joueur in game.players
-                if NOM_JOUEUR.lower()
-                in joueur.name.lower()
-            ),
-            None,
-        )
-
-    return moi
 
 
 def calculer_argent_main(game: Game) -> int:
@@ -51,7 +35,6 @@ def quantite_stock(
     game: Game,
     nom: str,
 ) -> int:
-
     nom = nom.lower()
 
     return next(
@@ -66,17 +49,11 @@ def quantite_stock(
 
 
 def provinces_restantes(game: Game) -> int:
-    return quantite_stock(
-        game,
-        "province",
-    )
+    return quantite_stock(game, "province")
 
 
 def curses_restantes(game: Game) -> int:
-    return quantite_stock(
-        game,
-        "curse",
-    )
+    return quantite_stock(game, "curse")
 
 
 def nombre_piles_vides(game: Game) -> int:
@@ -120,9 +97,10 @@ def bot_officiel_en_face(game: Game) -> bool:
     if moi is None:
         return False
 
-    mon_nom = nom_simple(moi.name)
-
-    if mon_nom.casefold() == NOM_BOT_OFFICIEL.casefold():
+    if (
+        nom_simple(moi.name).casefold()
+        == NOM_BOT_OFFICIEL.casefold()
+    ):
         return False
 
     return any(
