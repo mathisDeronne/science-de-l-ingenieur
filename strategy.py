@@ -34,7 +34,10 @@ def choisir_action(
 
     etat = obtenir_etat(game_id)
 
-    if etat["phase_achat"] or etat["actions_restantes"] <= 0:
+    if (
+        etat["phase_achat"]
+        or etat["actions_restantes"] <= 0
+    ):
         return None
 
     moi = trouver_mon_joueur(game)
@@ -64,10 +67,17 @@ def appliquer_effet_action(
 
     effet = EFFETS_ACTIONS.get(
         carte.value.lower(),
-        {"actions": 0, "achats": 0, "pieces": 0},
+        {
+            "actions": 0,
+            "achats": 0,
+            "pieces": 0,
+        },
     )
 
-    etat["actions_restantes"] += effet["actions"] - 1
+    etat["actions_restantes"] += (
+        effet["actions"] - 1
+    )
+
     etat["achats_restants"] += effet["achats"]
     etat["bonus_pieces"] += effet["pieces"]
 
@@ -95,7 +105,10 @@ def carte_action_autorisee(
     nom: str,
 ) -> bool:
 
-    limite = MAX_CARTES_ACTION.get(nom, 0)
+    limite = MAX_CARTES_ACTION.get(
+        nom,
+        0,
+    )
 
     return (
         limite > 0
@@ -117,7 +130,10 @@ def prioriser_premiere_witch(
     if (
         etat["tour"] > 8
         or curses_restantes(game) <= 0
-        or nombre_carte_achetee(game_id, "witch") > 0
+        or nombre_carte_achetee(
+            game_id,
+            "witch",
+        ) > 0
         or "witch" not in priorite
     ):
         return priorite
@@ -128,13 +144,27 @@ def prioriser_premiere_witch(
         if nom != "witch"
     ]
 
-    position = (
-        priorite.index("gold") + 1
-        if "gold" in priorite
-        else 0
-    )
+    if (
+        len(game.players) >= 3
+        and etat["tour"] <= 3
+    ):
+        position = (
+            priorite.index("province") + 1
+            if "province" in priorite
+            else 0
+        )
 
-    priorite.insert(position, "witch")
+    else:
+        position = (
+            priorite.index("gold") + 1
+            if "gold" in priorite
+            else 0
+        )
+
+    priorite.insert(
+        position,
+        "witch",
+    )
 
     return priorite
 
@@ -150,7 +180,10 @@ def obtenir_priorite_achat(
     provinces = provinces_restantes(game)
 
     if (
-        provinces <= max(1, nb_joueurs - 1)
+        provinces <= max(
+            1,
+            nb_joueurs - 1,
+        )
         or risque_fin_par_piles(game)
     ):
         return PRIORITE_ACHAT_FIN_URGENTE
@@ -192,7 +225,8 @@ def choisir_achat(
 
     achetables = {
         carte.value.lower(): carte
-        for carte, quantite in game.stock.quantities.items()
+        for carte, quantite
+        in game.stock.quantities.items()
         if (
             quantite > 0
             and Card.class_(carte).cost

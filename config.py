@@ -1,4 +1,20 @@
-NOM_JOUEUR = "Le 4ème Empire le Remake"
+NOM_BOT_OFFICIEL = "Le 4ème Empire"
+NOM_BOT_DEV = "Le 4ème Empire le Remake"
+
+DOMAINE_BOT_OFFICIEL = "le-4eme-empire.alwaysdata.net"
+DOMAINE_BOT_DEV = "le-4eme-empire-le-remake.alwaysdata.net"
+
+
+def obtenir_nom_joueur(host: str) -> str:
+    host = host.split(":")[0].lower()
+
+    if host == DOMAINE_BOT_OFFICIEL:
+        return NOM_BOT_OFFICIEL
+
+    if host == DOMAINE_BOT_DEV:
+        return NOM_BOT_DEV
+
+    return NOM_BOT_DEV
 
 EFFETS_ACTIONS = {
     "festival":       {"actions": 2, "achats": 1, "pieces": 2},
@@ -80,9 +96,9 @@ PRIORITE_ACHAT_MILIEU = [
 PRIORITE_ACHAT_ECONOMIE = [
     "province",
     "gold",
+    "laboratory",
     "silver",
     "witch",
-    "laboratory",
     "distantshore",
     "smithy",
     "farmingvillage",
@@ -97,8 +113,8 @@ PRIORITE_ACHAT_FIN = [
     "province",
     "duchy",
     "gold",
-    "estate",
     "silver",
+    "estate",
 ]
 
 PRIORITE_ACHAT_FIN_URGENTE = [

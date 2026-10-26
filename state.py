@@ -98,6 +98,3 @@ def nombre_total_actions_achetees(
 def supprimer_partie(game_id: str) -> None:
     with verrou_partie(game_id):
         etat_tours.pop(game_id, None)
-
-    with _verrou_registre:
-        _verrous_parties.pop(game_id, None)
