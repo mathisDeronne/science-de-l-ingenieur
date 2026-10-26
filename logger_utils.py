@@ -25,7 +25,7 @@ from state import obtenir_etat
 DOSSIER_LOGS = Path(__file__).resolve().parent / "logs"
 DOSSIER_LOGS.mkdir(exist_ok=True)
 
-MAX_PARTIES_LOGS = 10
+MAX_PARTIES_LOGS = 500
 
 # RLock permet à une fonction de logs d'appeler
 # une autre fonction utilisant le même verrou.

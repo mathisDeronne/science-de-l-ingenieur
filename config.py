@@ -5,11 +5,9 @@ NOM_JOUEUR = "Le 4ème Empire le Remake"
 # Effets locaux des cartes Action
 #####################################################
 
-# Les effets de pioche, Curse, gain d'Estate, Hireling...
-# sont appliqués par l'arbitre.
-#
-# Nous suivons seulement ce que l'arbitre ne nous renvoie pas :
-# Actions, Achats et pièces bonus.
+# La pioche, les Curse, les gains d'Estate, Hireling...
+# sont gérés directement par l'arbitre.
+# On suit seulement Actions, Achats et pièces bonus.
 
 EFFETS_ACTIONS = {
     "festival": {
@@ -42,8 +40,6 @@ EFFETS_ACTIONS = {
         "achats": 1,
         "pieces": 1,
     },
-
-    # Nouvelles cartes
     "councilroom": {
         "actions": 0,
         "achats": 1,
@@ -73,11 +69,8 @@ EFFETS_ACTIONS = {
 
 
 #####################################################
-# Ordre de jeu des cartes Action
+# Ordre de jeu des Actions
 #####################################################
-
-# On joue d'abord les cartes qui conservent ou donnent
-# des Actions, puis les cartes terminales.
 
 PRIORITE_ACTION = [
     "laboratory",
@@ -96,7 +89,7 @@ PRIORITE_ACTION = [
 
 
 #####################################################
-# Limitation du moteur
+# Limites des cartes Action
 #####################################################
 
 MAX_CARTES_ACTION = {
@@ -114,11 +107,9 @@ MAX_CARTES_ACTION = {
     "hireling": 1,
 }
 
-# Evite de remplir le deck de cartes Action.
 MAX_TOTAL_ACTIONS = 5
 
-# Après ce nombre de cartes Action,
-# on privilégie surtout Gold / Silver.
+# Après 2 Actions achetées, on privilégie l'économie.
 NB_ACTIONS_AVANT_ECONOMIE = 2
 
 
@@ -126,7 +117,6 @@ NB_ACTIONS_AVANT_ECONOMIE = 2
 # Priorités d'achat
 #####################################################
 
-# Début : petit moteur + économie.
 PRIORITE_ACHAT_DEBUT = [
     "province",
     "gold",
@@ -146,10 +136,11 @@ PRIORITE_ACHAT_DEBUT = [
     "councilroom",
 ]
 
-# Milieu de partie.
+
 PRIORITE_ACHAT_MILIEU = [
     "province",
     "gold",
+
     "witch",
     "silver",
 
@@ -164,7 +155,7 @@ PRIORITE_ACHAT_MILIEU = [
     "hireling",
 ]
 
-# Une fois le moteur construit.
+
 PRIORITE_ACHAT_ECONOMIE = [
     "province",
     "gold",
@@ -182,7 +173,7 @@ PRIORITE_ACHAT_ECONOMIE = [
     "hireling",
 ]
 
-# Fin de partie.
+
 PRIORITE_ACHAT_FIN = [
     "province",
     "duchy",
@@ -191,7 +182,7 @@ PRIORITE_ACHAT_FIN = [
     "silver",
 ]
 
-# Toute fin de partie.
+
 PRIORITE_ACHAT_FIN_URGENTE = [
     "province",
     "duchy",
@@ -202,12 +193,8 @@ PRIORITE_ACHAT_FIN_URGENTE = [
 
 
 #####################################################
-# Seuils
+# Seuils temporels
 #####################################################
 
 TOUR_FIN = 15
 TOUR_FIN_URGENTE = 20
-
-# Avec 2 piles déjà vides, la partie peut se terminer
-# rapidement si une troisième pile est épuisée.
-PILES_VIDES_URGENCE = 2

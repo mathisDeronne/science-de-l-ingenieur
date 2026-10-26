@@ -5,7 +5,10 @@ from config import NOM_JOUEUR
 
 
 def trouver_mon_joueur(game: Game):
-    """Notre joueur est normalement celui dont la main est visible."""
+    """
+    Notre joueur est normalement celui
+    dont la main est visible.
+    """
 
     moi = next(
         (
@@ -32,10 +35,10 @@ def trouver_mon_joueur(game: Game):
 
 def calculer_argent_main(game: Game) -> int:
     """
-    Calcule uniquement les cartes Trésor.
+    Calcule l'argent provenant des cartes Trésor.
 
-    Les bonus de Festival, Market, Woodcutter...
-    sont comptés séparément.
+    Les bonus des cartes Action sont suivis
+    séparément dans state.py.
     """
 
     moi = trouver_mon_joueur(game)
@@ -83,10 +86,38 @@ def curses_restantes(game: Game) -> int:
 
 
 def nombre_piles_vides(game: Game) -> int:
-    """Nombre de piles de la réserve complètement épuisées."""
-
     return sum(
         1
         for quantite in game.stock.quantities.values()
         if quantite == 0
+    )
+
+
+def risque_fin_par_piles(game: Game) -> bool:
+    """
+    Détecte si trois piles sont proches d'être épuisées.
+
+    Exemple à 4 joueurs :
+
+        0 / 0 / 8 -> pas urgent
+        0 / 0 / 2 -> urgent
+        0 / 1 / 2 -> urgent
+
+    On évite ainsi de passer trop tôt en mode
+    "Estate à tout prix" simplement parce que
+    deux piles sont déjà vides.
+    """
+
+    quantites = sorted(
+        game.stock.quantities.values()
+    )
+
+    if len(quantites) < 3:
+        return False
+
+    troisieme_plus_petite = quantites[2]
+
+    return (
+        troisieme_plus_petite
+        <= len(game.players)
     )
