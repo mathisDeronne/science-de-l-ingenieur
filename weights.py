@@ -924,7 +924,7 @@ def bonus_phase_partie(
 
     fin_normale = (
         provinces
-        <= nb_joueurs + 3
+        <= nb_joueurs + 2
     )
 
     if fin_urgente:
@@ -956,10 +956,10 @@ def bonus_phase_partie(
             bonus += 300
 
         elif nom == "duchy":
-            bonus += 120
+            bonus += 80
 
         elif nom == "estate":
-            bonus += 30
+            bonus += 15
 
         elif nom == "gardens":
             bonus += 50
