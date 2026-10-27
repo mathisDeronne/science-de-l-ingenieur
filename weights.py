@@ -725,21 +725,16 @@ def bonus_synergies(
     game_id: str,
     nom: str,
 ) -> int:
-    disponibles = (
-        cartes_stock_disponibles(
-            game
-        )
+    disponibles = cartes_stock_disponibles(
+        game
     )
 
-    bonus = 0
+    meilleur_bonus = 0
 
-    for synergie in (
-        SYNERGIES_ACHAT
-    ):
+    for synergie in SYNERGIES_ACHAT:
         cartes = tuple(
             carte.lower()
-            for carte
-            in synergie.get(
+            for carte in synergie.get(
                 "cartes",
                 (),
             )
@@ -748,55 +743,58 @@ def bonus_synergies(
         if nom not in cartes:
             continue
 
-        bonus_carte = (
-            synergie.get(
-                "bonus",
-                {},
-            ).get(
-                nom,
-                0,
-            )
+        bonus_carte = synergie.get(
+            "bonus",
+            {},
+        ).get(
+            nom,
+            0,
         )
 
-        if bonus_carte == 0:
+        if bonus_carte <= 0:
             continue
 
         autres = [
             carte
-            for carte
-            in cartes
+            for carte in cartes
             if carte != nom
         ]
 
-        synergie_active = False
-        synergie_possible = False
+        synergie_active = any(
+            quantite_achetee(
+                game_id,
+                autre,
+            ) > 0
+            for autre in autres
+        )
 
-        for autre in autres:
-            if (
-                quantite_achetee(
-                    game_id,
-                    autre,
-                )
-                > 0
-            ):
-                synergie_active = True
+        synergie_possible = any(
+            autre in disponibles
+            for autre in autres
+        )
 
-            if autre in disponibles:
-                synergie_possible = True
-
+        # Synergie réellement construite :
+        # bonus complet.
         if synergie_active:
-            bonus += bonus_carte
+            bonus_effectif = bonus_carte
 
+        # Synergie seulement disponible
+        # dans le royaume :
+        # petit bonus de potentiel.
         elif synergie_possible:
-            # On reconnaît le potentiel du royaume,
-            # mais beaucoup moins qu'une vraie
-            # synergie déjà construite.
-            bonus += round(
+            bonus_effectif = round(
                 bonus_carte * 0.30
             )
 
-    return bonus
+        else:
+            bonus_effectif = 0
 
+        meilleur_bonus = max(
+            meilleur_bonus,
+            bonus_effectif,
+        )
+
+    return meilleur_bonus
 
 # =========================================================
 # OBJECTIF D'ACTIONS
