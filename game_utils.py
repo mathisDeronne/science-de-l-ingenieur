@@ -6,7 +6,9 @@ from dopynion.data_model import Game
 from config import NOM_BOT_OFFICIEL
 
 
-def trouver_mon_joueur(game: Game):
+def trouver_mon_joueur(
+    game: Game,
+):
     return next(
         (
             joueur
@@ -17,17 +19,29 @@ def trouver_mon_joueur(game: Game):
     )
 
 
-def calculer_argent_main(game: Game) -> int:
-    moi = trouver_mon_joueur(game)
+def calculer_argent_main(
+    game: Game,
+) -> int:
+    moi = trouver_mon_joueur(
+        game
+    )
 
-    if moi is None or moi.hand is None:
+    if (
+        moi is None
+        or moi.hand is None
+    ):
         return 0
 
     return sum(
-        Card.class_(carte).money * quantite
+        Card.class_(
+            carte
+        ).money
+        * quantite
         for carte, quantite
         in moi.hand.quantities.items()
-        if not Card.class_(carte).is_action
+        if not Card.class_(
+            carte
+        ).is_action
     )
 
 
@@ -42,21 +56,34 @@ def quantite_stock(
             quantite
             for carte, quantite
             in game.stock.quantities.items()
-            if carte.value.lower() == nom
+            if carte.value.lower()
+            == nom
         ),
         0,
     )
 
 
-def provinces_restantes(game: Game) -> int:
-    return quantite_stock(game, "province")
+def provinces_restantes(
+    game: Game,
+) -> int:
+    return quantite_stock(
+        game,
+        "province",
+    )
 
 
-def curses_restantes(game: Game) -> int:
-    return quantite_stock(game, "curse")
+def curses_restantes(
+    game: Game,
+) -> int:
+    return quantite_stock(
+        game,
+        "curse",
+    )
 
 
-def nombre_piles_vides(game: Game) -> int:
+def nombre_piles_vides(
+    game: Game,
+) -> int:
     return sum(
         quantite == 0
         for quantite
@@ -64,18 +91,23 @@ def nombre_piles_vides(game: Game) -> int:
     )
 
 
-def risque_fin_par_piles(game: Game) -> bool:
+def risque_fin_par_piles(
+    game: Game,
+) -> bool:
     trois_piles = sorted(
         game.stock.quantities.values()
     )[:3]
 
     return (
         len(trois_piles) == 3
-        and sum(trois_piles) <= len(game.players)
+        and sum(trois_piles)
+        <= len(game.players)
     )
 
 
-def nom_simple(nom: str) -> str:
+def nom_simple(
+    nom: str,
+) -> str:
     nom = re.sub(
         r"^\[[^\]]+\]\s*",
         "",
@@ -91,21 +123,29 @@ def nom_simple(nom: str) -> str:
     return nom.strip()
 
 
-def bot_officiel_en_face(game: Game) -> bool:
-    moi = trouver_mon_joueur(game)
+def bot_officiel_en_face(
+    game: Game,
+) -> bool:
+    moi = trouver_mon_joueur(
+        game
+    )
 
     if moi is None:
         return False
 
     if (
-        nom_simple(moi.name).casefold()
+        nom_simple(
+            moi.name
+        ).casefold()
         == NOM_BOT_OFFICIEL.casefold()
     ):
         return False
 
     return any(
         joueur is not moi
-        and nom_simple(joueur.name).casefold()
+        and nom_simple(
+            joueur.name
+        ).casefold()
         == NOM_BOT_OFFICIEL.casefold()
         for joueur in game.players
     )

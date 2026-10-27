@@ -18,18 +18,63 @@ def obtenir_nom_joueur(host: str) -> str:
 
 
 EFFETS_ACTIONS = {
-    "festival":       {"actions": 2, "achats": 1, "pieces": 2},
-    "smithy":         {"actions": 0, "achats": 0, "pieces": 0},
-    "laboratory":     {"actions": 1, "achats": 0, "pieces": 0},
-    "village":        {"actions": 2, "achats": 0, "pieces": 0},
-    "woodcutter":     {"actions": 0, "achats": 1, "pieces": 2},
-    "market":         {"actions": 1, "achats": 1, "pieces": 1},
-    "councilroom":    {"actions": 0, "achats": 1, "pieces": 0},
-    "witch":          {"actions": 0, "achats": 0, "pieces": 0},
-    "farmingvillage": {"actions": 2, "achats": 0, "pieces": 0},
-    "distantshore":   {"actions": 1, "achats": 0, "pieces": 0},
-    "hireling":       {"actions": 0, "achats": 0, "pieces": 0},
+    "festival": {
+        "actions": 2,
+        "achats": 1,
+        "pieces": 2,
+    },
+    "smithy": {
+        "actions": 0,
+        "achats": 0,
+        "pieces": 0,
+    },
+    "laboratory": {
+        "actions": 1,
+        "achats": 0,
+        "pieces": 0,
+    },
+    "village": {
+        "actions": 2,
+        "achats": 0,
+        "pieces": 0,
+    },
+    "woodcutter": {
+        "actions": 0,
+        "achats": 1,
+        "pieces": 2,
+    },
+    "market": {
+        "actions": 1,
+        "achats": 1,
+        "pieces": 1,
+    },
+    "councilroom": {
+        "actions": 0,
+        "achats": 1,
+        "pieces": 0,
+    },
+    "witch": {
+        "actions": 0,
+        "achats": 0,
+        "pieces": 0,
+    },
+    "farmingvillage": {
+        "actions": 2,
+        "achats": 0,
+        "pieces": 0,
+    },
+    "distantshore": {
+        "actions": 1,
+        "achats": 0,
+        "pieces": 0,
+    },
+    "hireling": {
+        "actions": 0,
+        "achats": 0,
+        "pieces": 0,
+    },
 }
+
 
 PRIORITE_ACTION = [
     "laboratory",
@@ -45,83 +90,255 @@ PRIORITE_ACTION = [
     "woodcutter",
 ]
 
+
+# Plafonds absolus.
+# Le moteur de poids doit normalement arrêter
+# les achats avant d'atteindre ces limites.
 MAX_CARTES_ACTION = {
-    "laboratory": 2,
-    "smithy": 1,
-    "festival": 1,
-    "market": 1,
-    "village": 1,
-    "woodcutter": 0,
-    "witch": 1,
-    "farmingvillage": 1,
-    "councilroom": 1,
-    "distantshore": 1,
-    "hireling": 1,
+    "laboratory": 4,
+    "smithy": 2,
+    "festival": 2,
+    "market": 2,
+    "village": 3,
+    "woodcutter": 1,
+    "witch": 2,
+    "farmingvillage": 3,
+    "councilroom": 2,
+    "distantshore": 2,
+    "hireling": 2,
 }
 
-MAX_TOTAL_ACTIONS = 5
+MAX_TOTAL_ACTIONS = 6
+MAX_TOTAL_ACTIONS_BASE = 4
+
 NB_ACTIONS_AVANT_ECONOMIE = 2
 
-PRIORITE_ACHAT_DEBUT = [
-    "province",
-    "gold",
-    "witch",
-    "laboratory",
-    "smithy",
-    "farmingvillage",
-    "silver",
-    "hireling",
-    "distantshore",
-    "festival",
-    "market",
-    "village",
-    "councilroom",
-]
 
-PRIORITE_ACHAT_MILIEU = [
-    "province",
-    "gold",
-    "witch",
-    "silver",
-    "laboratory",
-    "distantshore",
-    "farmingvillage",
-    "smithy",
-    "festival",
-    "market",
-    "village",
-    "councilroom",
-    "hireling",
-]
+POIDS_BASE_ACHAT = {
+    "province": 1000,
 
-PRIORITE_ACHAT_ECONOMIE = [
-    "province",
-    "gold",
-    "silver",
-    "witch",
-    "laboratory",
-    "distantshore",
+    "gold": 70,
+    "silver": 46,
+
+    "witch": 42,
+    "laboratory": 38,
+    "smithy": 34,
+    "market": 33,
+    "festival": 32,
+    "distantshore": 31,
+    "village": 30,
+    "farmingvillage": 30,
+    "councilroom": 28,
+    "hireling": 27,
+    "woodcutter": 18,
+
+    "duchy": 10,
+    "estate": 0,
+}
+
+POIDS_MINIMUM_ACHAT = 1
+
+
+CARTES_TERMINALES = {
     "smithy",
+    "witch",
+    "councilroom",
+    "woodcutter",
+    "hireling",
+}
+
+
+CARTES_SUPPORT_ACTIONS = {
+    "village",
     "farmingvillage",
     "festival",
-    "market",
-    "village",
-    "councilroom",
-    "hireling",
+}
+
+
+MALUS_PAR_COPIE_ACTION = {
+    "laboratory": 5,
+    "smithy": 12,
+    "festival": 8,
+    "market": 7,
+    "village": 8,
+    "woodcutter": 15,
+    "witch": 12,
+    "farmingvillage": 8,
+    "councilroom": 12,
+    "distantshore": 9,
+    "hireling": 14,
+}
+
+
+SYNERGIES_ACHAT = [
+    {
+        "cartes": (
+            "village",
+            "smithy",
+        ),
+        "bonus": {
+            "village": 18,
+            "smithy": 18,
+        },
+    },
+    {
+        "cartes": (
+            "village",
+            "witch",
+        ),
+        "bonus": {
+            "village": 14,
+            "witch": 16,
+        },
+    },
+    {
+        "cartes": (
+            "village",
+            "councilroom",
+        ),
+        "bonus": {
+            "village": 15,
+            "councilroom": 18,
+        },
+    },
+    {
+        "cartes": (
+            "festival",
+            "smithy",
+        ),
+        "bonus": {
+            "festival": 15,
+            "smithy": 16,
+        },
+    },
+    {
+        "cartes": (
+            "festival",
+            "witch",
+        ),
+        "bonus": {
+            "festival": 12,
+            "witch": 15,
+        },
+    },
+    {
+        "cartes": (
+            "festival",
+            "councilroom",
+        ),
+        "bonus": {
+            "festival": 18,
+            "councilroom": 20,
+        },
+    },
+    {
+        "cartes": (
+            "farmingvillage",
+            "smithy",
+        ),
+        "bonus": {
+            "farmingvillage": 14,
+            "smithy": 15,
+        },
+    },
+    {
+        "cartes": (
+            "farmingvillage",
+            "witch",
+        ),
+        "bonus": {
+            "farmingvillage": 15,
+            "witch": 16,
+        },
+    },
+    {
+        "cartes": (
+            "farmingvillage",
+            "councilroom",
+        ),
+        "bonus": {
+            "farmingvillage": 16,
+            "councilroom": 18,
+        },
+    },
+    {
+        "cartes": (
+            "laboratory",
+            "witch",
+        ),
+        "bonus": {
+            "laboratory": 13,
+            "witch": 17,
+        },
+    },
+    {
+        "cartes": (
+            "laboratory",
+            "market",
+        ),
+        "bonus": {
+            "laboratory": 10,
+            "market": 10,
+        },
+    },
+    {
+        "cartes": (
+            "farmingvillage",
+            "distantshore",
+        ),
+        "bonus": {
+            "farmingvillage": 12,
+            "distantshore": 10,
+        },
+    },
+    {
+        "cartes": (
+            "village",
+            "hireling",
+        ),
+        "bonus": {
+            "village": 8,
+            "hireling": 8,
+        },
+    },
+    {
+        "cartes": (
+            "festival",
+            "hireling",
+        ),
+        "bonus": {
+            "festival": 8,
+            "hireling": 8,
+        },
+    },
+    {
+        "cartes": (
+            "farmingvillage",
+            "hireling",
+        ),
+        "bonus": {
+            "farmingvillage": 8,
+            "hireling": 8,
+        },
+    },
 ]
 
-PRIORITE_ACHAT_FIN = [
+
+PRIORITE_DEPARTAGE = [
     "province",
     "duchy",
     "gold",
+    "witch",
+    "laboratory",
     "silver",
+    "market",
+    "festival",
+    "village",
+    "farmingvillage",
+    "smithy",
+    "councilroom",
+    "distantshore",
+    "hireling",
+    "woodcutter",
     "estate",
-]
-
-PRIORITE_ACHAT_FIN_URGENTE = [
-    "province",
-    "duchy",
-    "estate",
-    "gold",
-    "silver",
 ]
