@@ -785,36 +785,3 @@ def trash_money_card_for_better_money_card(
         game_id=x_game_id,
         decision="NONE",
     )
-    money_cards: MoneyCardsInHand,
-    x_game_id: str = Header(
-        ...,
-        alias="x-game-id",
-    ),
-) -> DopynionResponseCardName:
-    quantites = extraire_quantites(
-        money_cards,
-        "money_in_hand",
-    )
-
-    for nom in (
-        "copper",
-        "silver",
-        "gold",
-    ):
-        for carte, quantite in (
-            quantites.items()
-        ):
-            if (
-                quantite > 0
-                and carte.value.lower()
-                == nom
-            ):
-                return DopynionResponseCardName(
-                    game_id=x_game_id,
-                    decision=carte.value,
-                )
-
-    return DopynionResponseCardName(
-        game_id=x_game_id,
-        decision="",
-    )
