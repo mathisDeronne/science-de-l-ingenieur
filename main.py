@@ -338,22 +338,68 @@ def extraire_quantites(
         objet,
     )
 
+    # Ancien format éventuel :
+    # objet.quantities
     if hasattr(
         contenu,
         "quantities",
     ):
-        return (
+        return dict(
             contenu.quantities
         )
 
+    # Dictionnaire déjà prêt
     if isinstance(
         contenu,
         dict,
     ):
         return contenu
 
-    return {}
+    # Format réellement envoyé
+    # actuellement par Dopynion :
+    # [Copper, Estate, Silver, ...]
+    if isinstance(
+        contenu,
+        (
+            list,
+            tuple,
+        ),
+    ):
+        quantites = {}
 
+        for carte in contenu:
+            quantites[carte] = (
+                quantites.get(
+                    carte,
+                    0,
+                )
+                + 1
+            )
+
+        return quantites
+
+    # Dernier fallback pour
+    # un éventuel iterable.
+    try:
+        cartes = list(
+            contenu
+        )
+
+    except TypeError:
+        return {}
+
+    quantites = {}
+
+    for carte in cartes:
+        quantites[carte] = (
+            quantites.get(
+                carte,
+                0,
+            )
+            + 1
+        )
+
+    return quantites
 
 def choisir_carte_faible(
     quantites: dict,
@@ -527,14 +573,13 @@ def discard_card_from_hand(
     if carte is None:
         return DopynionResponseCardName(
             game_id=x_game_id,
-            decision="",
+            decision="NONE",
         )
 
     return DopynionResponseCardName(
         game_id=x_game_id,
         decision=carte.value,
     )
-
 
 # =========================================================
 # TRASH
@@ -588,21 +633,15 @@ def trash_card_from_hand(
     )
 
     if carte is None:
-        carte = choisir_carte_faible(
-            quantites
-        )
-
-    if carte is None:
         return DopynionResponseCardName(
             game_id=x_game_id,
-            decision="",
+            decision="NONE",
         )
 
     return DopynionResponseCardName(
         game_id=x_game_id,
         decision=carte.value,
     )
-
 
 # =========================================================
 # CHANCELLOR
@@ -652,14 +691,13 @@ def choose_card_to_receive_in_discard(
     if carte is None:
         return DopynionResponseCardName(
             game_id=x_game_id,
-            decision="",
+            decision="NONE",
         )
 
     return DopynionResponseCardName(
         game_id=x_game_id,
         decision=carte.value,
     )
-
 
 @app.post(
     "/choose_card_to_receive_in_deck"
@@ -683,14 +721,13 @@ def choose_card_to_receive_in_deck(
     if carte is None:
         return DopynionResponseCardName(
             game_id=x_game_id,
-            decision="",
+            decision="NONE",
         )
 
     return DopynionResponseCardName(
         game_id=x_game_id,
         decision=carte.value,
     )
-
 
 @app.post(
     "/skip_card_reception_in_hand"
@@ -715,6 +752,39 @@ def skip_card_reception_in_hand(
     "/trash_money_card_for_better_money_card"
 )
 def trash_money_card_for_better_money_card(
+    money_cards: MoneyCardsInHand,
+    x_game_id: str = Header(
+        ...,
+        alias="x-game-id",
+    ),
+) -> DopynionResponseCardName:
+    quantites = extraire_quantites(
+        money_cards,
+        "money_in_hand",
+    )
+
+    for nom in (
+        "copper",
+        "silver",
+        "gold",
+    ):
+        for carte, quantite in (
+            quantites.items()
+        ):
+            if (
+                quantite > 0
+                and carte.value.lower()
+                == nom
+            ):
+                return DopynionResponseCardName(
+                    game_id=x_game_id,
+                    decision=carte.value,
+                )
+
+    return DopynionResponseCardName(
+        game_id=x_game_id,
+        decision="NONE",
+    )
     money_cards: MoneyCardsInHand,
     x_game_id: str = Header(
         ...,
