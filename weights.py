@@ -315,13 +315,13 @@ def scores_strategies(
             ) * 12,
 
         "GARDENS": (
-            gardens * 20
+            gardens * 9
             + max(
                 0,
-                taille_deck - 18,
-            ) * 2
-            + distantshore * 8
-            + bandit * 5
+                taille_deck - 20,
+            )
+            + distantshore * 5
+            + bandit * 3
         )
         if (
             "gardens" in stock
@@ -440,7 +440,7 @@ def bonus_strategie(
         },
 
         "GARDENS": {
-            "gardens": 14,
+            "gardens": 6,
             "distantshore": 6,
             "bandit": 4,
             "market": 3,
@@ -720,7 +720,14 @@ def malus_saturation(
         return quantite
 
     if nom == "gardens":
-        return quantite * 2
+        malus = quantite * 5
+
+        if quantite >= 3:
+            malus += (
+                quantite - 2
+            ) * 5
+
+        return malus
 
     if nom in EFFETS_ACTIONS:
         return (
@@ -820,69 +827,56 @@ def bonus_gardens(
         (taille + 1) // 10
     )
 
-    bonus = (
-        points_apres * 18
-    )
+    vp_marginaux = points_apres
 
     if (
         points_apres
         > points_avant
     ):
-        bonus += (
-            nb_gardens * 18
-        )
+        vp_marginaux += nb_gardens
 
-    if taille < 19:
-        bonus -= 25
-
-    if taille >= 29:
-        bonus += 10
-
-    bonus += min(
-        12,
-        quantite_achetee(
-            game_id,
-            "distantshore",
-        ) * 6,
+    bonus = (
+        vp_marginaux * 10
     )
+
+    # Gardens trop tôt
+    if taille < 20:
+        bonus -= 20
+
+    if (
+        taille < 24
+        and nb_gardens == 0
+    ):
+        bonus -= 10
+
+    # Gardens devient plus intéressant
+    # sur les gros decks
+    if taille >= 30:
+        bonus += 8
+
+    if (
+        len(game.players) >= 4
+        and taille < 26
+    ):
+        bonus -= 10
 
     bonus += min(
         8,
         quantite_achetee(
             game_id,
-            "bandit",
+            "distantshore",
         ) * 4,
     )
 
-    if any(
+    bonus += min(
+        6,
         quantite_achetee(
             game_id,
-            nom,
-        ) > 0
-        for nom in (
-            "market",
-            "festival",
-            "councilroom",
-            "woodcutter",
-        )
-    ):
-        bonus += 5
-
-    provinces = provinces_restantes(
-        game
+            "bandit",
+        ) * 3,
     )
 
-    if (
-        provinces
-        <= len(game.players) + 2
-    ):
-        bonus += (
-            points_apres * 10
-        )
-
     return bonus
-
-
 def bonus_phase_partie(
     game: Game,
     game_id: str,
