@@ -75,11 +75,3 @@ Méthodes HTTP POST, appelées automatiquement par l'arbitre quand certaines car
 
 - **Date** : 27/10/2026
 - **Heure de début** : 14:40
-
-## Points à vérifier (transcription automatique)
-
-- **Noms de cartes mal transcrits** : « Bambi » (l'effet décrit correspond à la carte Bandit du jeu d'origine, mais ce n'est pas dit à l'oral : à confirmer), « Gardens » (« caresse à lapin »), « Milice » (« Miliciard »), cartes de défense (« douves », « touffes »).
-- **Jardins** : l'arrondi « à l'inférieur » est audible dans une transcription et déformé dans l'autre. La règle exacte est à confirmer.
-- **`Score`** : la réunion du début indique qu'on ne voit pas les points des autres joueurs. Ici, la propriété `Score` est citée sans préciser si elle concerne les adversaires. À clarifier : c'est une information stratégique.
-- Noms exacts des routes et des propriétés (casse, underscores) reconstitués d'après l'audio. À vérifier dans le template.
-- Les intervenants ne sont pas distingués dans la transcription.
