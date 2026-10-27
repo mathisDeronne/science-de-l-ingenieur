@@ -12,7 +12,8 @@ def trouver_mon_joueur(
     return next(
         (
             joueur
-            for joueur in game.players
+            for joueur
+            in game.players
             if joueur.hand is not None
         ),
         None,
@@ -100,8 +101,11 @@ def risque_fin_par_piles(
 
     return (
         len(trois_piles) == 3
-        and sum(tri_pile for tri_pile in trois_piles)
-        <= len(game.players)
+        and sum(
+            trois_piles
+        ) <= len(
+            game.players
+        )
     )
 
 
@@ -147,5 +151,6 @@ def bot_officiel_en_face(
             joueur.name
         ).casefold()
         == NOM_BOT_OFFICIEL.casefold()
-        for joueur in game.players
+        for joueur
+        in game.players
     )

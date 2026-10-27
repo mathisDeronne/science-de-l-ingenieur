@@ -63,6 +63,15 @@ _verrou_resume = (
 def verrou_log_partie(
     game_id: str,
 ) -> threading.RLock:
+    verrou = (
+        _verrous_logs_parties.get(
+            game_id
+        )
+    )
+
+    if verrou is not None:
+        return verrou
+
     with _verrou_registre_logs:
         return (
             _verrous_logs_parties
@@ -329,7 +338,8 @@ def afficher_situation(
                 quantite
             for nom, quantite
             in stock.items()
-            if nom not in cartes_basiques
+            if nom
+            not in cartes_basiques
         },
 
         "piles_vides":
@@ -413,6 +423,77 @@ def afficher_situation(
         )
 
 
+def compacter_evaluation_achat(
+    etat: dict[str, Any],
+    decision: str,
+) -> dict[str, Any]:
+    evaluations = etat.get(
+        "derniere_evaluation_achat",
+        {},
+    )
+
+    nom_choisi = (
+        decision
+        .removeprefix(
+            "BUY "
+        )
+        .strip()
+        .lower()
+    )
+
+    classement = sorted(
+        (
+            (
+                nom,
+                evaluation.get(
+                    "total",
+                    -10000,
+                ),
+            )
+            for nom, evaluation
+            in evaluations.items()
+        ),
+        key=lambda item:
+            item[1],
+        reverse=True,
+    )[:5]
+
+    choisi = evaluations.get(
+        nom_choisi,
+        {},
+    )
+
+    detail_choisi = {
+        cle: valeur
+        for cle, valeur
+        in choisi.items()
+        if cle not in {
+            "scores_strategies",
+            "strategie",
+        }
+    }
+
+    return {
+        "decision":
+            decision,
+
+        "strategie":
+            etat.get(
+                "strategie_actuelle"
+            ),
+
+        "top": {
+            nom:
+                poids
+            for nom, poids
+            in classement
+        },
+
+        "choisi":
+            detail_choisi,
+    }
+
+
 def enregistrer_decision(
     game_id: str,
     tour: int,
@@ -427,27 +508,12 @@ def enregistrer_decision(
     if decision.startswith(
         "BUY "
     ):
-        evaluation = {
-            "decision":
+        evaluation = (
+            compacter_evaluation_achat(
+                etat,
                 decision,
-
-            "strategie":
-                etat.get(
-                    "strategie_actuelle"
-                ),
-
-            "scores_strategies":
-                etat.get(
-                    "scores_strategies",
-                    {},
-                ),
-
-            "poids":
-                etat.get(
-                    "derniere_evaluation_achat",
-                    {},
-                ),
-        }
+            )
+        )
 
     with verrou_log_partie(
         game_id
@@ -466,7 +532,9 @@ def enregistrer_decision(
         if not situations:
             return
 
-        situation = situations[-1]
+        situation = (
+            situations[-1]
+        )
 
         if (
             situation.get(
@@ -476,9 +544,11 @@ def enregistrer_decision(
         ):
             return
 
-        decisions = situation.setdefault(
-            "decisions",
-            [],
+        decisions = (
+            situation.setdefault(
+                "decisions",
+                [],
+            )
         )
 
         if (
@@ -568,6 +638,52 @@ def est_abandon(
     )
 
 
+def elimination_precoce_probable(
+    historique: dict[str, Any],
+) -> bool:
+    situations = historique.get(
+        "situations",
+        [],
+    )
+
+    if len(situations) != 1:
+        return False
+
+    derniere = situations[0]
+
+    if derniere.get(
+        "tour"
+    ) != 1:
+        return False
+
+    if derniere.get(
+        "partie_finie",
+        False,
+    ):
+        return False
+
+    scores = derniere.get(
+        "scores",
+        {},
+    )
+
+    if not scores:
+        return False
+
+    # Cas typique du kick :
+    # premier tour, partie non finie,
+    # tous les joueurs encore au
+    # score de départ.
+    return (
+        len(
+            set(
+                scores.values()
+            )
+        )
+        == 1
+    )
+
+
 def est_victoire(
     historique: dict[str, Any],
 ) -> bool:
@@ -592,12 +708,15 @@ def est_victoire(
 
     if (
         not scores
-        or mon_joueur not in scores
+        or mon_joueur
+        not in scores
     ):
         return False
 
     return (
-        scores[mon_joueur]
+        scores[
+            mon_joueur
+        ]
         == max(
             scores.values()
         )
@@ -654,10 +773,9 @@ def fichiers_logs_finalises(
 
     fichiers = [
         fichier
-        for fichier in (
-            DOSSIER_LOGS.glob(
-                "*.json"
-            )
+        for fichier
+        in DOSSIER_LOGS.glob(
+            "*.json"
         )
         if motif.match(
             fichier.name
@@ -706,50 +824,56 @@ def stats_vides(
     }
 
 
-def charger_stats(
+def reconstruire_stats(
+    exclure_nom: str | None = None,
 ) -> dict[str, Any]:
-    if not FICHIER_STATS.exists():
-        stats = stats_vides()
+    fichiers = [
+        fichier
+        for fichier
+        in fichiers_logs_finalises()
+        if fichier.name
+        != exclure_nom
+    ]
 
-        fichiers = (
-            fichiers_logs_finalises()
+    chronologiques = list(
+        reversed(
+            fichiers[
+                :MAX_PARTIES_LOGS
+            ]
         )
+    )
 
-        chronologiques = list(
-            reversed(
-                fichiers[
-                    :MAX_PARTIES_LOGS
-                ]
+    total = len(
+        fichiers
+    )
+
+    return {
+        "parties_terminees":
+            total,
+
+        "parties_depuis_resume":
+            total
+            % TAILLE_RESUME,
+
+        "dernier_resume":
+            (
+                total
+                // TAILLE_RESUME
             )
-        )
+            * TAILLE_RESUME,
 
-        stats[
-            "parties_terminees"
-        ] = len(fichiers)
-
-        stats[
-            "logs_recents"
-        ] = [
+        "logs_recents": [
             fichier.name
             for fichier
             in chronologiques
-        ]
+        ],
+    }
 
-        # Si on possède déjà au moins
-        # 100 logs mais aucun _stats,
-        # le prochain end_game créera
-        # immédiatement un résumé.
-        if len(fichiers) >= TAILLE_RESUME:
-            stats[
-                "parties_depuis_resume"
-            ] = TAILLE_RESUME
 
-        else:
-            stats[
-                "parties_depuis_resume"
-            ] = len(fichiers)
-
-        return stats
+def charger_stats(
+) -> dict[str, Any] | None:
+    if not FICHIER_STATS.exists():
+        return None
 
     try:
         stats = json.loads(
@@ -762,7 +886,7 @@ def charger_stats(
         json.JSONDecodeError,
         OSError,
     ):
-        return stats_vides()
+        return None
 
     stats.setdefault(
         "parties_terminees",
@@ -950,6 +1074,8 @@ def generer_resume(
                     resultat
                 ] += 1
 
+        # Les F ne sont pas utilisés
+        # pour évaluer la stratégie.
         if resultat == "F":
             continue
 
@@ -961,7 +1087,9 @@ def generer_resume(
         if not situations:
             continue
 
-        derniere = situations[-1]
+        derniere = (
+            situations[-1]
+        )
 
         tour = derniere.get(
             "tour"
@@ -1000,7 +1128,8 @@ def generer_resume(
                 nom,
                 0,
             )
-            for nom in EFFETS_ACTIONS
+            for nom
+            in EFFETS_ACTIONS
         )
 
         actions.append(
@@ -1152,6 +1281,15 @@ def enregistrer_partie_terminee(
     with _verrou_resume:
         stats = charger_stats()
 
+        if stats is None:
+            # Le fichier final vient déjà
+            # d'être créé : on l'exclut
+            # pendant la reconstruction
+            # pour éviter un double comptage.
+            stats = reconstruire_stats(
+                exclure_nom=nom_fichier,
+            )
+
         stats[
             "parties_terminees"
         ] += 1
@@ -1185,7 +1323,9 @@ def enregistrer_partie_terminee(
                 "parties_depuis_resume"
             ]
             >= TAILLE_RESUME
-            and len(logs_recents)
+            and len(
+                logs_recents
+            )
             >= TAILLE_RESUME
         ):
             derniers_100 = (
@@ -1260,6 +1400,21 @@ def terminer_historique(
             historique
         ):
             resultat = "F"
+
+        elif elimination_precoce_probable(
+            historique
+        ):
+            resultat = "F"
+
+            historique[
+                "abandon"
+            ] = True
+
+            historique[
+                "raison_abandon"
+            ] = (
+                "elimination_precoce"
+            )
 
         elif est_victoire(
             historique

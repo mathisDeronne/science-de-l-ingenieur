@@ -17,6 +17,16 @@ _verrou_registre = threading.Lock()
 def verrou_partie(
     game_id: str,
 ) -> threading.RLock:
+    # Chemin rapide :
+    # pas de verrou global si le verrou
+    # de cette partie existe déjà.
+    verrou = _verrous_parties.get(
+        game_id
+    )
+
+    if verrou is not None:
+        return verrou
+
     with _verrou_registre:
         return _verrous_parties.setdefault(
             game_id,
@@ -75,9 +85,13 @@ def demarrer_tour(
         etat["actions_restantes"] = 1
         etat["achats_restants"] = 1
         etat["bonus_pieces"] = 0
+
         etat["argent_restant"] = None
         etat["phase_achat"] = False
-        etat["derniere_evaluation_achat"] = {}
+
+        etat[
+            "derniere_evaluation_achat"
+        ] = {}
 
         return etat
 
@@ -91,10 +105,12 @@ def enregistrer_achat(
             game_id
         )
 
-        etat["cartes_achetees"][
-            nom_carte
-        ] = (
-            etat["cartes_achetees"].get(
+        achats = etat[
+            "cartes_achetees"
+        ]
+
+        achats[nom_carte] = (
+            achats.get(
                 nom_carte,
                 0,
             )
@@ -169,7 +185,8 @@ def nombre_total_actions_achetees(
                 nom,
                 0,
             )
-            for nom in EFFETS_ACTIONS
+            for nom
+            in EFFETS_ACTIONS
         )
 
 

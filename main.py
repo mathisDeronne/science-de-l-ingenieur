@@ -48,10 +48,34 @@ from strategy import (
 app = FastAPI()
 
 
-class DopynionResponseStr(BaseModel):
+# =========================================================
+# RÉPONSES ATTENDUES PAR L'ARBITRE
+# =========================================================
+
+class DopynionResponseStr(
+    BaseModel
+):
     game_id: str
     decision: str
 
+
+class DopynionResponseCardName(
+    BaseModel
+):
+    game_id: str
+    decision: str
+
+
+class DopynionResponseBool(
+    BaseModel
+):
+    game_id: str
+    decision: bool
+
+
+# =========================================================
+# INFORMATIONS GÉNÉRALES
+# =========================================================
 
 @app.get(
     "/",
@@ -88,6 +112,10 @@ def name(
         )
     )
 
+
+# =========================================================
+# GESTION PARTIE
+# =========================================================
 
 @app.get("/start_game")
 def start_game(
@@ -141,18 +169,24 @@ def play(
             x_game_id,
         )
 
+        # Partie déjà terminée
         if game.finished:
+            decision = "END_TURN"
+
             enregistrer_decision(
                 x_game_id,
                 etat["tour"],
-                "END_TURN",
+                decision,
             )
 
             return DopynionResponseStr(
                 game_id=x_game_id,
-                decision="END_TURN",
+                decision=decision,
             )
 
+        # Protection :
+        # le bot dev ne joue jamais
+        # contre le bot officiel.
         if bot_officiel_en_face(
             game
         ):
@@ -161,16 +195,22 @@ def play(
                 "bot_officiel_en_face",
             )
 
+            decision = "END_TURN"
+
             enregistrer_decision(
                 x_game_id,
                 etat["tour"],
-                "END_TURN",
+                decision,
             )
 
             return DopynionResponseStr(
                 game_id=x_game_id,
-                decision="END_TURN",
+                decision=decision,
             )
+
+        # -------------------------
+        # PHASE ACTION
+        # -------------------------
 
         action = choisir_action(
             game,
@@ -199,6 +239,10 @@ def play(
                 game_id=x_game_id,
                 decision=decision,
             )
+
+        # -------------------------
+        # PHASE ACHAT
+        # -------------------------
 
         commencer_phase_achat(
             game,
@@ -244,15 +288,21 @@ def play(
                 decision=decision,
             )
 
+        # -------------------------
+        # FIN DU TOUR
+        # -------------------------
+
+        decision = "END_TURN"
+
         enregistrer_decision(
             x_game_id,
             etat["tour"],
-            "END_TURN",
+            decision,
         )
 
         return DopynionResponseStr(
             game_id=x_game_id,
-            decision="END_TURN",
+            decision=decision,
         )
 
 
@@ -274,6 +324,10 @@ def end_game(
     return "OK"
 
 
+# =========================================================
+# OUTILS CALLBACKS
+# =========================================================
+
 def extraire_quantites(
     objet: Any,
     attribut: str,
@@ -288,7 +342,9 @@ def extraire_quantites(
         contenu,
         "quantities",
     ):
-        return contenu.quantities
+        return (
+            contenu.quantities
+        )
 
     if isinstance(
         contenu,
@@ -302,6 +358,8 @@ def extraire_quantites(
 def choisir_carte_faible(
     quantites: dict,
 ):
+    # Pour une défausse, on privilégie
+    # les cartes mortes dans la main.
     ordre = [
         "curse",
 
@@ -330,6 +388,10 @@ def choisir_carte_faible(
             ):
                 return carte
 
+    # Si aucune carte connue,
+    # on renvoie quand même une carte
+    # disponible pour ne pas provoquer
+    # une commande vide.
     for carte, quantite in (
         quantites.items()
     ):
@@ -415,12 +477,17 @@ def meilleure_carte(
             Card.class_(
                 carte
             ).cost,
+
             Card.class_(
                 carte
             ).money,
         ),
     )
 
+
+# =========================================================
+# MILITIA / DÉFAUSSE
+# =========================================================
 
 @app.post(
     "/confirm_discard_card_from_hand"
@@ -431,8 +498,11 @@ def confirm_discard_card_from_hand(
         ...,
         alias="x-game-id",
     ),
-) -> bool:
-    return True
+) -> DopynionResponseBool:
+    return DopynionResponseBool(
+        game_id=x_game_id,
+        decision=True,
+    )
 
 
 @app.post(
@@ -444,7 +514,7 @@ def discard_card_from_hand(
         ...,
         alias="x-game-id",
     ),
-) -> str:
+) -> DopynionResponseCardName:
     quantites = extraire_quantites(
         hand,
         "hand",
@@ -455,10 +525,20 @@ def discard_card_from_hand(
     )
 
     if carte is None:
-        return ""
+        return DopynionResponseCardName(
+            game_id=x_game_id,
+            decision="",
+        )
 
-    return carte.value
+    return DopynionResponseCardName(
+        game_id=x_game_id,
+        decision=carte.value,
+    )
 
+
+# =========================================================
+# TRASH
+# =========================================================
 
 @app.post(
     "/confirm_trash_card_from_hand"
@@ -469,17 +549,22 @@ def confirm_trash_card_from_hand(
         ...,
         alias="x-game-id",
     ),
-) -> bool:
+) -> DopynionResponseBool:
     quantites = extraire_quantites(
         hand,
         "hand",
     )
 
-    return (
+    decision = (
         choisir_carte_a_trash(
             quantites
         )
         is not None
+    )
+
+    return DopynionResponseBool(
+        game_id=x_game_id,
+        decision=decision,
     )
 
 
@@ -492,7 +577,7 @@ def trash_card_from_hand(
         ...,
         alias="x-game-id",
     ),
-) -> str:
+) -> DopynionResponseCardName:
     quantites = extraire_quantites(
         hand,
         "hand",
@@ -508,10 +593,20 @@ def trash_card_from_hand(
         )
 
     if carte is None:
-        return ""
+        return DopynionResponseCardName(
+            game_id=x_game_id,
+            decision="",
+        )
 
-    return carte.value
+    return DopynionResponseCardName(
+        game_id=x_game_id,
+        decision=carte.value,
+    )
 
+
+# =========================================================
+# CHANCELLOR
+# =========================================================
 
 @app.post(
     "/confirm_discard_deck"
@@ -521,12 +616,19 @@ def confirm_discard_deck(
         ...,
         alias="x-game-id",
     ),
-) -> bool:
-    # Chancellor :
-    # on refuse pour l'instant de
-    # défausser aveuglément tout le deck.
-    return False
+) -> DopynionResponseBool:
+    # Pas assez d'informations pour
+    # savoir si vider le deck est
+    # avantageux.
+    return DopynionResponseBool(
+        game_id=x_game_id,
+        decision=False,
+    )
 
+
+# =========================================================
+# RÉCEPTION DE CARTES
+# =========================================================
 
 @app.post(
     "/choose_card_to_receive_in_discard"
@@ -537,7 +639,7 @@ def choose_card_to_receive_in_discard(
         ...,
         alias="x-game-id",
     ),
-) -> str:
+) -> DopynionResponseCardName:
     cartes = cartes_possibles(
         possible_cards,
         "possible_cards",
@@ -548,9 +650,15 @@ def choose_card_to_receive_in_discard(
     )
 
     if carte is None:
-        return ""
+        return DopynionResponseCardName(
+            game_id=x_game_id,
+            decision="",
+        )
 
-    return carte.value
+    return DopynionResponseCardName(
+        game_id=x_game_id,
+        decision=carte.value,
+    )
 
 
 @app.post(
@@ -562,7 +670,7 @@ def choose_card_to_receive_in_deck(
         ...,
         alias="x-game-id",
     ),
-) -> str:
+) -> DopynionResponseCardName:
     cartes = cartes_possibles(
         possible_cards,
         "possible_cards",
@@ -573,9 +681,15 @@ def choose_card_to_receive_in_deck(
     )
 
     if carte is None:
-        return ""
+        return DopynionResponseCardName(
+            game_id=x_game_id,
+            decision="",
+        )
 
-    return carte.value
+    return DopynionResponseCardName(
+        game_id=x_game_id,
+        decision=carte.value,
+    )
 
 
 @app.post(
@@ -586,9 +700,16 @@ def skip_card_reception_in_hand(
         ...,
         alias="x-game-id",
     ),
-) -> bool:
-    return False
+) -> DopynionResponseBool:
+    return DopynionResponseBool(
+        game_id=x_game_id,
+        decision=False,
+    )
 
+
+# =========================================================
+# CARTE D'ARGENT À TRASH
+# =========================================================
 
 @app.post(
     "/trash_money_card_for_better_money_card"
@@ -599,7 +720,7 @@ def trash_money_card_for_better_money_card(
         ...,
         alias="x-game-id",
     ),
-) -> str:
+) -> DopynionResponseCardName:
     quantites = extraire_quantites(
         money_cards,
         "money_in_hand",
@@ -618,6 +739,12 @@ def trash_money_card_for_better_money_card(
                 and carte.value.lower()
                 == nom
             ):
-                return carte.value
+                return DopynionResponseCardName(
+                    game_id=x_game_id,
+                    decision=carte.value,
+                )
 
-    return ""
+    return DopynionResponseCardName(
+        game_id=x_game_id,
+        decision="",
+    )

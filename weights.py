@@ -23,6 +23,7 @@ from game_utils import (
 )
 from state import (
     nombre_carte_achetee,
+    nombre_gain_estime,
     nombre_total_actions_achetees,
     obtenir_etat,
 )
@@ -46,6 +47,22 @@ def quantite_achetee(
     return nombre_carte_achetee(
         game_id,
         nom,
+    )
+
+
+def quantite_economique(
+    game_id: str,
+    nom: str,
+) -> int:
+    return (
+        nombre_carte_achetee(
+            game_id,
+            nom,
+        )
+        + nombre_gain_estime(
+            game_id,
+            nom,
+        )
     )
 
 
@@ -89,7 +106,8 @@ def ecart_score(
 
     adversaires = [
         joueur.score
-        for joueur in game.players
+        for joueur
+        in game.players
         if joueur is not moi
     ]
 
@@ -98,7 +116,9 @@ def ecart_score(
 
     return (
         moi.score
-        - max(adversaires)
+        - max(
+            adversaires
+        )
     )
 
 
@@ -110,7 +130,8 @@ def nombre_terminales_achetees(
             game_id,
             nom,
         )
-        for nom in CARTES_TERMINALES
+        for nom
+        in CARTES_TERMINALES
     )
 
 
@@ -122,7 +143,8 @@ def nombre_supports_achetes(
             game_id,
             nom,
         )
-        for nom in CARTES_SUPPORT_ACTIONS
+        for nom
+        in CARTES_SUPPORT_ACTIONS
     )
 
 
@@ -156,54 +178,66 @@ def scores_strategies(
         game
     )
 
-    gold = quantite_achetee(
+    gold = quantite_economique(
         game_id,
         "gold",
     )
-    silver = quantite_achetee(
+
+    silver = quantite_economique(
         game_id,
         "silver",
     )
+
     smithy = quantite_achetee(
         game_id,
         "smithy",
     )
+
     witch = quantite_achetee(
         game_id,
         "witch",
     )
+
     village = quantite_achetee(
         game_id,
         "village",
     )
+
     farming = quantite_achetee(
         game_id,
         "farmingvillage",
     )
+
     laboratory = quantite_achetee(
         game_id,
         "laboratory",
     )
+
     festival = quantite_achetee(
         game_id,
         "festival",
     )
+
     council = quantite_achetee(
         game_id,
         "councilroom",
     )
+
     militia = quantite_achetee(
         game_id,
         "militia",
     )
+
     bandit = quantite_achetee(
         game_id,
         "bandit",
     )
+
     gardens = quantite_achetee(
         game_id,
         "gardens",
     )
+
     distantshore = quantite_achetee(
         game_id,
         "distantshore",
@@ -301,10 +335,12 @@ def scores_strategies(
             "village",
             "smithy",
         ),
+
         "LAB_WITCH": (
             "laboratory",
             "witch",
         ),
+
         "FESTIVAL_COUNCIL": (
             "festival",
             "councilroom",
@@ -481,8 +517,10 @@ def bonus_synergies(
         elif deja_autre > 0:
             if deja_nom == 0:
                 facteur = 1.0
+
             elif deja_nom == 1:
                 facteur = 0.50
+
             else:
                 facteur = 0.25
 
@@ -622,7 +660,9 @@ def max_total_actions_dynamique(
             "FESTIVAL_COUNCIL",
             "FARMING_ENGINE",
         }
-        and scores[strategie] >= 40
+        and scores[
+            strategie
+        ] >= 40
     ):
         maximum += 1
 
@@ -729,12 +769,12 @@ def bonus_economie(
 ) -> int:
     bonus = 0
 
-    silver = quantite_achetee(
+    silver = quantite_economique(
         game_id,
         "silver",
     )
 
-    gold = quantite_achetee(
+    gold = quantite_economique(
         game_id,
         "gold",
     )
@@ -1224,7 +1264,7 @@ def bonus_carte_specifique(
         ) * 3
 
         if (
-            quantite_achetee(
+            quantite_economique(
                 game_id,
                 "gold",
             ) <= 2
@@ -1289,7 +1329,7 @@ def calculer_poids_achat(
                 nom,
             ),
 
-        "strategie":
+        "bonus_strategie":
             bonus_strategie(
                 nom,
                 strategie,
@@ -1354,7 +1394,13 @@ def calculer_poids_achat(
 
     return {
         **composants,
-        "total": total,
-        "strategie": strategie,
-        "scores_strategies": scores,
+
+        "total":
+            total,
+
+        "strategie":
+            strategie,
+
+        "scores_strategies":
+            scores,
     }

@@ -256,9 +256,9 @@ def choisir_achat(
             )
         )
 
-        evaluations[nom] = (
-            evaluation
-        )
+        evaluations[
+            nom
+        ] = evaluation
 
         candidats.append(
             (

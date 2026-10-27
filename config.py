@@ -29,6 +29,8 @@ EFFETS_ACTIONS = {
     "farmingvillage": {"actions": 2, "achats": 0, "pieces": 0},
     "distantshore":   {"actions": 1, "achats": 0, "pieces": 0},
     "hireling":       {"actions": 0, "achats": 0, "pieces": 0},
+
+    # Nouvelles cartes
     "chancellor":     {"actions": 0, "achats": 0, "pieces": 2},
     "militia":        {"actions": 0, "achats": 0, "pieces": 2},
     "bandit":         {"actions": 0, "achats": 0, "pieces": 0},
@@ -39,6 +41,7 @@ GAINS_ACTIONS = {
     "bandit": {
         "gold": 1,
     },
+
     "distantshore": {
         "estate": 1,
     },
