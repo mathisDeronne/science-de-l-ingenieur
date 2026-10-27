@@ -717,7 +717,20 @@ def malus_saturation(
         return malus
 
     if nom == "gold":
-        return quantite
+        richesse = quantite_economique(
+            game_id,
+            "gold",
+        )
+
+        malus = max(
+            0,
+            richesse - 4,
+        ) * 5
+
+        if richesse >= 8:
+            malus += 10
+
+        return malus
 
     if nom == "gardens":
         malus = quantite * 5
@@ -911,7 +924,7 @@ def bonus_phase_partie(
 
     fin_normale = (
         provinces
-        <= nb_joueurs + 1
+        <= nb_joueurs + 3
     )
 
     if fin_urgente:
@@ -1042,7 +1055,7 @@ def bonus_situation_score(
     if (
         ecart <= -8
         and provinces
-        > nb_joueurs + 2
+        > nb_joueurs + 4
     ):
         if nom == "gold":
             bonus += 10

@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import threading
 from datetime import datetime
@@ -261,6 +262,9 @@ def afficher_situation(
     situation = {
         "tour":
             etat["tour"],
+
+        "pid":
+            os.getpid(),
 
         "partie_finie":
             game.finished,
