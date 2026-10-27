@@ -99,8 +99,8 @@ POIDS_BASE_ACHAT = {
     "militia": 43,
     "witch": 42,
 
-    "laboratory": 38,
-    "smithy": 34,
+    "laboratory": 50,
+    "smithy": 40,
     "market": 33,
     "festival": 32,
     "distantshore": 31,
@@ -152,7 +152,7 @@ MALUS_PAR_COPIE_ACTION = {
     "councilroom": 12,
     "distantshore": 9,
     "hireling": 14,
-    "militia": 12,
+    "militia": 20,
     "bandit": 12,
     "chancellor": 18,
 }

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any
 
 from dopynion.data_model import Game
@@ -5,7 +7,6 @@ from dopynion.data_model import Game
 from config import (
     CARTES_SUPPORT_ACTIONS,
     CARTES_TERMINALES,
-    EFFETS_ACTIONS,
     MALUS_PAR_COPIE_ACTION,
     MAX_CARTES_ACTION,
     MAX_TOTAL_ACTIONS,
@@ -14,39 +15,198 @@ from config import (
     POIDS_BASE_ACHAT,
     SYNERGIES_ACHAT,
 )
+
 from game_utils import (
     curses_restantes,
+    nombre_piles_vides,
     provinces_restantes,
-    quantite_stock,
     risque_fin_par_piles,
     trouver_mon_joueur,
 )
-from state import (
-    nombre_carte_achetee,
-    nombre_gain_estime,
-    nombre_total_actions_achetees,
-    obtenir_etat,
+
+from state import obtenir_etat
+
+
+# =========================================================
+# AJUSTEMENTS LOCAUX
+# =========================================================
+#
+# On les place ici volontairement afin que le test de cette
+# version ne dépende pas d'une modification oubliée dans
+# config.py.
+#
+# Si les résultats sont bons, on pourra ensuite déplacer
+# définitivement ces valeurs dans config.py.
+# =========================================================
+
+POIDS_BASE_EFFECTIFS = dict(
+    POIDS_BASE_ACHAT
 )
+
+# Les dernières parties montrent que le bot manque
+# fortement de cartes de pioche.
+POIDS_BASE_EFFECTIFS.update(
+    {
+        "laboratory": 50,
+        "smithy": 40,
+    }
+)
+
+
+MALUS_PAR_COPIE_EFFECTIFS = dict(
+    MALUS_PAR_COPIE_ACTION
+)
+
+# Une première Militia est intéressante.
+# La deuxième doit être beaucoup moins automatique.
+MALUS_PAR_COPIE_EFFECTIFS[
+    "militia"
+] = 22
+
+
+# =========================================================
+# GROUPES DE CARTES
+# =========================================================
+
+CARTES_PIOCHE = {
+    "laboratory",
+    "smithy",
+    "councilroom",
+    "witch",
+    "distantshore",
+}
+
+
+CARTES_PIOCHE_FORTE = {
+    "laboratory",
+    "smithy",
+    "councilroom",
+}
+
+
+CARTES_MOTEUR = {
+    "laboratory",
+    "smithy",
+    "councilroom",
+    "market",
+    "festival",
+    "village",
+    "farmingvillage",
+    "witch",
+    "distantshore",
+}
+
+
+CARTES_VICTOIRE = {
+    "province",
+    "duchy",
+    "estate",
+    "gardens",
+}
+
+
+CARTES_TRESOR = {
+    "copper",
+    "silver",
+    "gold",
+}
+
+
+# =========================================================
+# OUTILS GÉNÉRAUX
+# =========================================================
+
+def normaliser_nom(
+    carte: Any,
+) -> str:
+    if hasattr(
+        carte,
+        "value",
+    ):
+        return str(
+            carte.value
+        ).lower()
+
+    return str(
+        carte
+    ).lower()
 
 
 def cartes_stock_disponibles(
     game: Game,
 ) -> set[str]:
-    return {
-        carte.value.lower()
-        for carte, quantite
-        in game.stock.quantities.items()
-        if quantite > 0
-    }
+    disponibles = set()
+
+    for carte, quantite in (
+        game.stock.quantities.items()
+    ):
+        if quantite <= 0:
+            continue
+
+        disponibles.add(
+            normaliser_nom(
+                carte
+            )
+        )
+
+    return disponibles
+
+
+def quantite_stock(
+    game: Game,
+    nom: str,
+) -> int:
+    nom = nom.lower()
+
+    for carte, quantite in (
+        game.stock.quantities.items()
+    ):
+        if (
+            normaliser_nom(
+                carte
+            )
+            == nom
+        ):
+            return quantite
+
+    return 0
 
 
 def quantite_achetee(
     game_id: str,
     nom: str,
 ) -> int:
-    return nombre_carte_achetee(
-        game_id,
-        nom,
+    etat = obtenir_etat(
+        game_id
+    )
+
+    return int(
+        etat.get(
+            "cartes_achetees",
+            {},
+        ).get(
+            nom.lower(),
+            0,
+        )
+    )
+
+
+def quantite_gain_estime(
+    game_id: str,
+    nom: str,
+) -> int:
+    etat = obtenir_etat(
+        game_id
+    )
+
+    return int(
+        etat.get(
+            "gains_estimes",
+            {},
+        ).get(
+            nom.lower(),
+            0,
+        )
     )
 
 
@@ -55,11 +215,11 @@ def quantite_economique(
     nom: str,
 ) -> int:
     return (
-        nombre_carte_achetee(
+        quantite_achetee(
             game_id,
             nom,
         )
-        + nombre_gain_estime(
+        + quantite_gain_estime(
             game_id,
             nom,
         )
@@ -74,23 +234,106 @@ def estimer_taille_deck(
     )
 
     achats = sum(
-        etat.get(
+        int(quantite)
+        for quantite
+        in etat.get(
             "cartes_achetees",
             {},
         ).values()
     )
 
     gains = sum(
-        etat.get(
+        int(quantite)
+        for quantite
+        in etat.get(
             "gains_estimes",
             {},
         ).values()
     )
 
+    # Deck Dominion classique :
+    # 7 Copper + 3 Estate.
     return (
         10
         + achats
         + gains
+    )
+
+
+def nombre_total_actions(
+    game_id: str,
+) -> int:
+    etat = obtenir_etat(
+        game_id
+    )
+
+    total = 0
+
+    for nom, quantite in (
+        etat.get(
+            "cartes_achetees",
+            {},
+        ).items()
+    ):
+        if nom.lower() in (
+            MAX_CARTES_ACTION
+        ):
+            total += int(
+                quantite
+            )
+
+    return total
+
+
+def nombre_actions_terminales(
+    game_id: str,
+) -> int:
+    return sum(
+        quantite_achetee(
+            game_id,
+            nom,
+        )
+        for nom
+        in CARTES_TERMINALES
+    )
+
+
+def nombre_supports_actions(
+    game_id: str,
+) -> int:
+    return sum(
+        quantite_achetee(
+            game_id,
+            nom,
+        )
+        for nom
+        in CARTES_SUPPORT_ACTIONS
+    )
+
+
+def nombre_cartes_pioche(
+    game_id: str,
+) -> int:
+    return sum(
+        quantite_achetee(
+            game_id,
+            nom,
+        )
+        for nom
+        in CARTES_PIOCHE
+    )
+
+
+def nombre_cartes_pioche_forte(
+    game_id: str,
+) -> int:
+    return sum(
+        quantite_achetee(
+            game_id,
+            nom,
+        )
+        for nom
+        in CARTES_PIOCHE_FORTE
     )
 
 
@@ -122,70 +365,38 @@ def ecart_score(
     )
 
 
-def nombre_terminales_achetees(
-    game_id: str,
-) -> int:
-    return sum(
-        quantite_achetee(
-            game_id,
-            nom,
-        )
-        for nom
-        in CARTES_TERMINALES
-    )
-
-
-def nombre_supports_achetes(
-    game_id: str,
-) -> int:
-    return sum(
-        quantite_achetee(
-            game_id,
-            nom,
-        )
-        for nom
-        in CARTES_SUPPORT_ACTIONS
-    )
-
-
-def nombre_terminales_main(
-    game: Game,
-) -> int:
-    moi = trouver_mon_joueur(
-        game
-    )
-
-    if (
-        moi is None
-        or moi.hand is None
-    ):
-        return 0
-
-    return sum(
-        quantite
-        for carte, quantite
-        in moi.hand.quantities.items()
-        if carte.value.lower()
-        in CARTES_TERMINALES
-    )
-
+# =========================================================
+# STRATÉGIES
+# =========================================================
 
 def scores_strategies(
     game: Game,
     game_id: str,
 ) -> dict[str, int]:
-    stock = cartes_stock_disponibles(
-        game
+    disponibles = (
+        cartes_stock_disponibles(
+            game
+        )
     )
 
-    gold = quantite_economique(
-        game_id,
-        "gold",
+    nb_joueurs = len(
+        game.players
+    )
+
+    taille_deck = (
+        estimer_taille_deck(
+            game_id
+        )
     )
 
     silver = quantite_economique(
         game_id,
         "silver",
+    )
+
+    gold = quantite_economique(
+        game_id,
+        "gold",
     )
 
     smithy = quantite_achetee(
@@ -198,14 +409,19 @@ def scores_strategies(
         "witch",
     )
 
+    militia = quantite_achetee(
+        game_id,
+        "militia",
+    )
+
+    bandit = quantite_achetee(
+        game_id,
+        "bandit",
+    )
+
     village = quantite_achetee(
         game_id,
         "village",
-    )
-
-    farming = quantite_achetee(
-        game_id,
-        "farmingvillage",
     )
 
     laboratory = quantite_achetee(
@@ -218,19 +434,25 @@ def scores_strategies(
         "festival",
     )
 
-    council = quantite_achetee(
-        game_id,
-        "councilroom",
+    councilroom = (
+        quantite_achetee(
+            game_id,
+            "councilroom",
+        )
     )
 
-    militia = quantite_achetee(
-        game_id,
-        "militia",
+    farmingvillage = (
+        quantite_achetee(
+            game_id,
+            "farmingvillage",
+        )
     )
 
-    bandit = quantite_achetee(
-        game_id,
-        "bandit",
+    distantshore = (
+        quantite_achetee(
+            game_id,
+            "distantshore",
+        )
     )
 
     gardens = quantite_achetee(
@@ -238,27 +460,17 @@ def scores_strategies(
         "gardens",
     )
 
-    distantshore = quantite_achetee(
-        game_id,
-        "distantshore",
-    )
-
-    nb_actions = (
-        nombre_total_actions_achetees(
-            game_id
-        )
-    )
-
-    taille_deck = estimer_taille_deck(
-        game_id
-    )
-
     scores = {
         "BIG_MONEY":
             20
-            + gold * 3
-            + silver
-            - nb_actions * 2,
+            + min(
+                16,
+                gold * 2,
+            )
+            + min(
+                8,
+                silver,
+            ),
 
         "SMITHY_MONEY":
             8
@@ -267,96 +479,124 @@ def scores_strategies(
 
         "WITCH_MONEY":
             8
-            + witch * 17
+            + witch * 18
             + gold * 2
             + max(
                 0,
-                len(game.players) - 2,
+                nb_joueurs - 2,
             ) * 3,
 
+        # Réduit par rapport à l'ancienne version.
+        # Une Militia reste intéressante,
+        # mais ne doit plus aspirer la stratégie.
         "MILITIA_MONEY":
             8
-            + militia * 18
+            + militia * 14
             + gold * 2
             + max(
                 0,
-                len(game.players) - 2,
-            ) * 3,
+                nb_joueurs - 2,
+            ),
 
         "BANDIT_MONEY":
             10
-            + bandit * 20
-            + gold
+            + bandit * 16
+            + gold * 2
             + max(
                 0,
-                len(game.players) - 2,
+                nb_joueurs - 2,
             ) * 2,
 
         "VILLAGE_SMITHY":
-            village * 18
-            + smithy * 18,
+            village * 12
+            + smithy * 15,
 
         "LAB_WITCH":
-            laboratory * 15
-            + witch * 18,
+            laboratory * 14
+            + witch * 15,
 
         "FESTIVAL_COUNCIL":
-            festival * 16
-            + council * 18,
+            festival * 12
+            + councilroom * 16,
 
         "FARMING_ENGINE":
-            farming * 16
-            + max(
-                smithy,
-                witch,
-                council,
-                militia,
-                bandit,
-            ) * 12,
+            farmingvillage * 12
+            + laboratory * 8
+            + councilroom * 7
+            + festival * 5,
 
-        "GARDENS": (
+        # Gardens reste possible,
+        # mais ne s'auto-renforce plus violemment.
+        "GARDENS":
             gardens * 9
             + max(
                 0,
                 taille_deck - 20,
             )
             + distantshore * 5
-            + bandit * 3
-        )
-        if (
-            "gardens" in stock
-            or gardens > 0
-        )
-        else -100,
+            + bandit * 3,
     }
 
-    disponibilites = {
-        "VILLAGE_SMITHY": (
-            "village",
-            "smithy",
-        ),
+    # -----------------------------------------------------
+    # Les stratégies impossibles dans ce royaume
+    # ne doivent pas devenir dominantes.
+    # -----------------------------------------------------
 
-        "LAB_WITCH": (
-            "laboratory",
-            "witch",
-        ),
+    if "smithy" not in disponibles:
+        scores[
+            "SMITHY_MONEY"
+        ] = -100
 
-        "FESTIVAL_COUNCIL": (
-            "festival",
-            "councilroom",
-        ),
-    }
+    if "witch" not in disponibles:
+        scores[
+            "WITCH_MONEY"
+        ] = -100
 
-    for strategie, cartes in (
-        disponibilites.items()
+    if "militia" not in disponibles:
+        scores[
+            "MILITIA_MONEY"
+        ] = -100
+
+    if "bandit" not in disponibles:
+        scores[
+            "BANDIT_MONEY"
+        ] = -100
+
+    if not (
+        "village" in disponibles
+        and "smithy" in disponibles
     ):
-        if all(
-            nom in stock
-            for nom in cartes
-        ):
-            scores[
-                strategie
-            ] += 8
+        scores[
+            "VILLAGE_SMITHY"
+        ] = -100
+
+    if not (
+        "laboratory" in disponibles
+        and "witch" in disponibles
+    ):
+        scores[
+            "LAB_WITCH"
+        ] = -100
+
+    if not (
+        "festival" in disponibles
+        and "councilroom" in disponibles
+    ):
+        scores[
+            "FESTIVAL_COUNCIL"
+        ] = -100
+
+    if "farmingvillage" not in (
+        disponibles
+    ):
+        scores[
+            "FARMING_ENGINE"
+        ] = -100
+
+    if "gardens" not in disponibles:
+        scores[
+            "GARDENS"
+        ] = -100
 
     return scores
 
@@ -378,11 +618,29 @@ def strategie_dominante(
         key=scores.get,
     )
 
+    etat = obtenir_etat(
+        game_id
+    )
+
+    etat[
+        "strategie_actuelle"
+    ] = strategie
+
+    etat[
+        "scores_strategies"
+    ] = dict(
+        scores
+    )
+
     return (
         strategie,
         scores,
     )
 
+
+# =========================================================
+# BONUS DE STRATÉGIE
+# =========================================================
 
 def bonus_strategie(
     nom: str,
@@ -395,57 +653,57 @@ def bonus_strategie(
         },
 
         "SMITHY_MONEY": {
-            "smithy": 7,
-            "gold": 9,
+            "smithy": 15,
+            "gold": 8,
+            "silver": 2,
         },
 
         "WITCH_MONEY": {
-            "witch": 9,
+            "witch": 16,
+            "laboratory": 8,
             "gold": 8,
         },
 
         "MILITIA_MONEY": {
-            "militia": 10,
+            # Réduit volontairement.
+            "militia": 8,
             "gold": 7,
-            "silver": 2,
+            "silver": 1,
         },
 
         "BANDIT_MONEY": {
-            "bandit": 11,
+            "bandit": 12,
             "gold": 5,
+            "silver": 1,
         },
 
         "VILLAGE_SMITHY": {
-            "village": 10,
-            "smithy": 10,
+            "village": 15,
+            "smithy": 18,
         },
 
         "LAB_WITCH": {
-            "laboratory": 10,
-            "witch": 12,
+            "laboratory": 16,
+            "witch": 18,
         },
 
         "FESTIVAL_COUNCIL": {
-            "festival": 10,
-            "councilroom": 12,
+            "festival": 16,
+            "councilroom": 20,
         },
 
         "FARMING_ENGINE": {
-            "farmingvillage": 9,
-            "smithy": 5,
-            "witch": 6,
-            "councilroom": 6,
-            "militia": 5,
-            "bandit": 5,
+            "farmingvillage": 15,
+            "laboratory": 12,
+            "councilroom": 10,
+            "festival": 8,
         },
 
         "GARDENS": {
+            # Anciennement beaucoup trop haut.
             "gardens": 6,
             "distantshore": 6,
-            "bandit": 4,
-            "market": 3,
-            "festival": 3,
-            "councilroom": 3,
+            "bandit": 3,
         },
     }
 
@@ -458,136 +716,134 @@ def bonus_strategie(
     )
 
 
+# =========================================================
+# SYNERGIES
+# =========================================================
+
 def bonus_synergies(
     game: Game,
     game_id: str,
     nom: str,
 ) -> int:
-    stock = cartes_stock_disponibles(
-        game
+    disponibles = (
+        cartes_stock_disponibles(
+            game
+        )
     )
 
-    total = 0
+    bonus = 0
 
-    for synergie in SYNERGIES_ACHAT:
-        cartes = synergie[
-            "cartes"
-        ]
+    for synergie in (
+        SYNERGIES_ACHAT
+    ):
+        cartes = tuple(
+            carte.lower()
+            for carte
+            in synergie.get(
+                "cartes",
+                (),
+            )
+        )
 
         if nom not in cartes:
             continue
 
-        autre = (
-            cartes[1]
-            if cartes[0] == nom
-            else cartes[0]
+        bonus_carte = (
+            synergie.get(
+                "bonus",
+                {},
+            ).get(
+                nom,
+                0,
+            )
         )
 
-        bonus = synergie[
-            "bonus"
-        ].get(
-            nom,
-            0,
-        )
-
-        deja_nom = quantite_achetee(
-            game_id,
-            nom,
-        )
-
-        deja_autre = quantite_achetee(
-            game_id,
-            autre,
-        )
-
-        if (
-            autre not in stock
-            and deja_autre <= 0
-        ):
+        if bonus_carte == 0:
             continue
 
-        if (
-            deja_nom == 0
-            and deja_autre == 0
-        ):
-            total += round(
-                bonus * 0.20
+        autres = [
+            carte
+            for carte
+            in cartes
+            if carte != nom
+        ]
+
+        synergie_active = False
+        synergie_possible = False
+
+        for autre in autres:
+            if (
+                quantite_achetee(
+                    game_id,
+                    autre,
+                )
+                > 0
+            ):
+                synergie_active = True
+
+            if autre in disponibles:
+                synergie_possible = True
+
+        if synergie_active:
+            bonus += bonus_carte
+
+        elif synergie_possible:
+            # On reconnaît le potentiel du royaume,
+            # mais beaucoup moins qu'une vraie
+            # synergie déjà construite.
+            bonus += round(
+                bonus_carte * 0.30
             )
 
-        elif deja_autre > 0:
-            if deja_nom == 0:
-                facteur = 1.0
+    return bonus
 
-            elif deja_nom == 1:
-                facteur = 0.50
 
-            else:
-                facteur = 0.25
-
-            total += round(
-                bonus * facteur
-            )
-
-    return total
-
+# =========================================================
+# OBJECTIF D'ACTIONS
+# =========================================================
 
 def seuil_actions_cible(
     game: Game,
     game_id: str,
 ) -> int:
-    etat = obtenir_etat(
-        game_id
-    )
-
-    cible = (
-        NB_ACTIONS_AVANT_ECONOMIE
-    )
-
-    strategie, scores = (
+    strategie, _ = (
         strategie_dominante(
             game,
             game_id,
         )
     )
 
-    moteurs = {
+    cible = (
+        NB_ACTIONS_AVANT_ECONOMIE
+    )
+
+    if strategie in {
         "VILLAGE_SMITHY",
         "LAB_WITCH",
         "FESTIVAL_COUNCIL",
         "FARMING_ENGINE",
-    }
+    }:
+        cible += 2
+
+    elif strategie in {
+        "WITCH_MONEY",
+        "MILITIA_MONEY",
+        "BANDIT_MONEY",
+        "SMITHY_MONEY",
+    }:
+        cible += 1
 
     if (
-        strategie in moteurs
-        and scores[strategie] >= 30
+        estimer_taille_deck(
+            game_id
+        )
+        >= 22
     ):
         cible += 1
 
-    provinces = provinces_restantes(
-        game
-    )
-
-    if (
-        provinces
-        <= len(game.players) + 2
-    ):
-        cible = min(
-            cible,
-            1,
-        )
-
-    if etat["tour"] >= 18:
-        cible = min(
-            cible,
-            1,
-        )
-
-    return max(
-        1,
-        min(
-            cible,
-            3,
-        ),
+    return min(
+        cible,
+        MAX_TOTAL_ACTIONS,
     )
 
 
@@ -595,192 +851,33 @@ def max_total_actions_dynamique(
     game: Game,
     game_id: str,
 ) -> int:
-    etat = obtenir_etat(
-        game_id
+    cible = seuil_actions_cible(
+        game,
+        game_id,
     )
 
-    stock = cartes_stock_disponibles(
-        game
+    maximum = max(
+        MAX_TOTAL_ACTIONS_BASE,
+        cible,
     )
 
-    actuel = (
-        nombre_total_actions_achetees(
+    if (
+        nombre_cartes_pioche(
             game_id
         )
-    )
-
-    maximum = (
-        MAX_TOTAL_ACTIONS_BASE
-    )
-
-    support_present = any(
-        nom in stock
-        for nom in (
-            "village",
-            "farmingvillage",
-            "festival",
-        )
-    )
-
-    terminal_present = any(
-        nom in stock
-        for nom in (
-            "smithy",
-            "witch",
-            "councilroom",
-            "militia",
-            "bandit",
-        )
-    )
-
-    if (
-        support_present
-        and terminal_present
+        >= 2
     ):
         maximum += 1
 
-    if (
-        "laboratory" in stock
-        and terminal_present
-    ):
-        maximum += 1
-
-    strategie, scores = (
-        strategie_dominante(
-            game,
-            game_id,
-        )
-    )
-
-    if (
-        strategie
-        in {
-            "VILLAGE_SMITHY",
-            "LAB_WITCH",
-            "FESTIVAL_COUNCIL",
-            "FARMING_ENGINE",
-        }
-        and scores[
-            strategie
-        ] >= 40
-    ):
-        maximum += 1
-
-    provinces = provinces_restantes(
-        game
-    )
-
-    if (
-        provinces
-        <= len(game.players) + 2
-    ):
-        maximum = min(
-            maximum,
-            actuel,
-        )
-
-    elif etat["tour"] >= 18:
-        maximum = min(
-            maximum,
-            actuel + 1,
-        )
-
-    maximum = min(
+    return min(
         maximum,
         MAX_TOTAL_ACTIONS,
     )
 
-    return max(
-        actuel,
-        maximum,
-    )
 
-
-def malus_saturation(
-    game_id: str,
-    nom: str,
-) -> int:
-    quantite = quantite_achetee(
-        game_id,
-        nom,
-    )
-
-    if nom == "silver":
-        malus = quantite * 3
-
-        if quantite >= 6:
-            malus += 8
-
-        if quantite >= 9:
-            malus += 12
-
-        return malus
-
-    if nom == "gold":
-        richesse = quantite_economique(
-            game_id,
-            "gold",
-        )
-
-        malus = max(
-            0,
-            richesse - 4,
-        ) * 5
-
-        if richesse >= 8:
-            malus += 10
-
-        return malus
-
-    if nom == "gardens":
-        malus = quantite * 5
-
-        if quantite >= 3:
-            malus += (
-                quantite - 2
-            ) * 5
-
-        return malus
-
-    if nom in EFFETS_ACTIONS:
-        return (
-            quantite
-            * MALUS_PAR_COPIE_ACTION.get(
-                nom,
-                8,
-            )
-        )
-
-    return 0
-
-
-def malus_proximite_limite(
-    game_id: str,
-    nom: str,
-) -> int:
-    limite = MAX_CARTES_ACTION.get(
-        nom
-    )
-
-    if limite is None:
-        return 0
-
-    quantite = quantite_achetee(
-        game_id,
-        nom,
-    )
-
-    if quantite >= limite:
-        return 10000
-
-    return round(
-        (
-            quantite
-            / limite
-        )
-        * 15
-    )
-
+# =========================================================
+# ÉCONOMIE
+# =========================================================
 
 def bonus_economie(
     game: Game,
@@ -799,25 +896,62 @@ def bonus_economie(
         "gold",
     )
 
-    if nom == "gold":
-        if gold <= 2:
-            bonus += 8
+    total_actions = (
+        nombre_total_actions(
+            game_id
+        )
+    )
 
-        if (
-            silver >= 5
-            and gold <= 2
-        ):
-            bonus += 15
+    # -----------------------------------------------------
+    # Silver
+    # -----------------------------------------------------
 
     if nom == "silver":
-        if silver >= 6:
+        if silver == 0:
+            bonus += 6
+
+        elif silver == 1:
+            bonus += 4
+
+        elif silver >= 6:
             bonus -= 8
 
-        if silver >= 9:
-            bonus -= 12
+    # -----------------------------------------------------
+    # Gold
+    # -----------------------------------------------------
+
+    elif nom == "gold":
+        if silver >= 2:
+            bonus += 8
+
+        if gold == 0:
+            bonus += 6
+
+        elif gold == 1:
+            bonus += 4
+
+    # -----------------------------------------------------
+    # Éviter de construire 5 actions avant d'avoir
+    # une économie correcte.
+    # -----------------------------------------------------
+
+    if (
+        nom in MAX_CARTES_ACTION
+        and total_actions
+        >= NB_ACTIONS_AVANT_ECONOMIE
+        and (
+            silver
+            + gold
+        ) < 3
+    ):
+        bonus -= 8
 
     return bonus
 
+
+# =========================================================
+# GARDENS
+# =========================================================
 
 def bonus_gardens(
     game: Game,
@@ -840,19 +974,26 @@ def bonus_gardens(
         (taille + 1) // 10
     )
 
+    # VP du nouveau Gardens.
     vp_marginaux = points_apres
 
+    # Si on passe 19 -> 20,
+    # 29 -> 30, etc.,
+    # les Gardens déjà présents
+    # gagnent également un point.
     if (
         points_apres
         > points_avant
     ):
-        vp_marginaux += nb_gardens
+        vp_marginaux += (
+            nb_gardens
+        )
 
     bonus = (
         vp_marginaux * 10
     )
 
-    # Gardens trop tôt
+    # Gardens beaucoup trop tôt.
     if taille < 20:
         bonus -= 20
 
@@ -862,17 +1003,24 @@ def bonus_gardens(
     ):
         bonus -= 10
 
-    # Gardens devient plus intéressant
-    # sur les gros decks
+    # Les gros decks commencent
+    # réellement à valoriser Gardens.
     if taille >= 30:
         bonus += 8
 
+    # En quatre joueurs,
+    # on exige un peu plus de deck
+    # avant de lancer Gardens.
     if (
-        len(game.players) >= 4
+        len(
+            game.players
+        ) >= 4
         and taille < 26
     ):
         bonus -= 10
 
+    # Cartes qui font naturellement
+    # grossir le deck.
     bonus += min(
         8,
         quantite_achetee(
@@ -890,17 +1038,17 @@ def bonus_gardens(
     )
 
     return bonus
+
+
+# =========================================================
+# PHASE DE PARTIE
+# =========================================================
+
 def bonus_phase_partie(
     game: Game,
     game_id: str,
     nom: str,
 ) -> int:
-    etat = obtenir_etat(
-        game_id
-    )
-
-    tour = etat["tour"]
-
     provinces = provinces_restantes(
         game
     )
@@ -920,8 +1068,13 @@ def bonus_phase_partie(
         or risque_fin_par_piles(
             game
         )
+        or nombre_piles_vides(
+            game
+        ) >= 2
     )
 
+    # Compromis trouvé après le test :
+    # +3 verdissait beaucoup trop tôt.
     fin_normale = (
         provinces
         <= nb_joueurs + 2
@@ -929,7 +1082,7 @@ def bonus_phase_partie(
 
     if fin_urgente:
         if nom == "province":
-            bonus += 500
+            bonus += 300
 
         elif nom == "duchy":
             bonus += 350
@@ -940,18 +1093,18 @@ def bonus_phase_partie(
         elif nom == "gardens":
             bonus += 180
 
-        elif nom in EFFETS_ACTIONS:
-            bonus -= 150
+        elif nom in {
+            "gold",
+            "silver",
+        }:
+            bonus -= 35
 
-        elif nom == "silver":
-            bonus -= 30
+        elif nom in (
+            MAX_CARTES_ACTION
+        ):
+            bonus -= 40
 
-        elif nom == "gold":
-            bonus -= 15
-
-        return bonus
-
-    if fin_normale:
+    elif fin_normale:
         if nom == "province":
             bonus += 300
 
@@ -964,78 +1117,27 @@ def bonus_phase_partie(
         elif nom == "gardens":
             bonus += 50
 
-        elif nom in EFFETS_ACTIONS:
-            bonus -= 60
-
         elif nom == "gold":
-            bonus -= 5
+            bonus -= 8
 
-    if (
-        nom in EFFETS_ACTIONS
-        and tour > 12
-    ):
-        bonus -= min(
-            25,
-            (tour - 12) * 2,
-        )
+        elif nom == "silver":
+            bonus -= 12
 
-    if (
-        nom == "gold"
-        and tour <= 10
-    ):
-        bonus += 6
-
-    if nom == "hireling":
-        if tour <= 5:
-            bonus += 10
-
-        elif tour <= 9:
-            bonus += 4
-
-        elif tour >= 12:
+        elif nom in (
+            MAX_CARTES_ACTION
+        ):
             bonus -= 15
-
-        if (
-            provinces
-            <= nb_joueurs + 2
-        ):
-            bonus -= 25
-
-    if nom == "distantshore":
-        if tour <= 5:
-            bonus -= 5
-
-        if (
-            provinces
-            <= nb_joueurs + 3
-        ):
-            bonus += 12
-
-    if nom == "witch":
-        curses = curses_restantes(
-            game
-        )
-
-        if curses <= 0:
-            bonus -= 100
-
-        elif curses <= 3:
-            bonus -= 20
-
-        elif (
-            len(game.players) >= 3
-            and quantite_achetee(
-                game_id,
-                "witch",
-            ) == 0
-        ):
-            bonus += 7
 
     return bonus
 
 
+# =========================================================
+# SITUATION AU SCORE
+# =========================================================
+
 def bonus_situation_score(
     game: Game,
+    game_id: str,
     nom: str,
 ) -> int:
     ecart = ecart_score(
@@ -1052,6 +1154,30 @@ def bonus_situation_score(
 
     bonus = 0
 
+    # -----------------------------------------------------
+    # Nous sommes nettement devant :
+    # convertir l'avantage en VP.
+    # -----------------------------------------------------
+
+    if ecart >= 8:
+        if nom == "province":
+            bonus += 20
+
+        elif nom == "duchy":
+            bonus += 10
+
+        elif nom == "estate":
+            bonus += 5
+
+    # -----------------------------------------------------
+    # Nous sommes nettement derrière.
+    #
+    # IMPORTANT :
+    # cette logique ne doit fonctionner
+    # que s'il reste réellement assez
+    # de Provinces.
+    # -----------------------------------------------------
+
     if (
         ecart <= -8
         and provinces
@@ -1060,244 +1186,237 @@ def bonus_situation_score(
         if nom == "gold":
             bonus += 10
 
-        elif nom == "witch":
-            bonus += 8
-
-        elif nom == "bandit":
-            bonus += 8
-
-        elif nom == "militia":
-            bonus += 6
-
         elif nom == "laboratory":
-            bonus += 5
+            bonus += 8
 
         elif nom == "smithy":
-            bonus += 4
-
-        elif nom == "estate":
-            bonus -= 15
+            bonus += 6
 
         elif nom == "duchy":
             bonus -= 8
 
-    if (
-        ecart >= 8
-        and provinces
-        <= nb_joueurs + 2
-    ):
-        if nom == "duchy":
-            bonus += 25
-
         elif nom == "estate":
-            bonus += 15
-
-        elif nom == "gardens":
-            bonus += 15
-
-        elif nom in EFFETS_ACTIONS:
-            bonus -= 12
+            bonus -= 10
 
     return bonus
 
 
-def bonus_structure_deck(
+# =========================================================
+# STRUCTURE DU DECK
+# =========================================================
+
+def bonus_structure(
     game: Game,
     game_id: str,
     nom: str,
 ) -> int:
     bonus = 0
 
-    terminales = (
-        nombre_terminales_achetees(
+    terminaux = (
+        nombre_actions_terminales(
             game_id
         )
     )
 
     supports = (
-        nombre_supports_achetes(
+        nombre_supports_actions(
             game_id
         )
     )
 
-    capacite_terminales = (
-        1 + supports
+    nb_pioche = (
+        nombre_cartes_pioche(
+            game_id
+        )
     )
 
-    if nom in CARTES_TERMINALES:
-        if (
-            terminales
-            >= capacite_terminales
-        ):
-            excedent = (
-                terminales
-                - capacite_terminales
-                + 1
-            )
+    nb_pioche_forte = (
+        nombre_cartes_pioche_forte(
+            game_id
+        )
+    )
 
-            bonus -= (
-                excedent * 18
-            )
-
-    if nom in CARTES_SUPPORT_ACTIONS:
-        if (
-            supports
-            > terminales + 1
-        ):
-            bonus -= 15
-
-    cible = seuil_actions_cible(
-        game,
+    militia = quantite_achetee(
         game_id,
+        "militia",
     )
 
-    nb_actions = (
-        nombre_total_actions_achetees(
-            game_id
-        )
-    )
+    # =====================================================
+    # NOUVEAU :
+    # LE DECK N'A AUCUNE PIOCHE
+    # =====================================================
+
+    if nb_pioche == 0:
+        if nom == "laboratory":
+            bonus += 15
+
+        elif nom == "smithy":
+            bonus += 10
+
+        elif nom == "councilroom":
+            bonus += 10
+
+        elif nom == "witch":
+            bonus += 8
+
+        elif nom == "distantshore":
+            bonus += 8
+
+        # On possède déjà notre attaque :
+        # la deuxième Militia ne doit pas
+        # remplacer notre première vraie
+        # carte de pioche.
+        if (
+            nom == "militia"
+            and militia >= 1
+        ):
+            bonus -= 12
+
+    # =====================================================
+    # Peu de pioche forte
+    # =====================================================
+
+    elif nb_pioche_forte == 0:
+        if nom == "laboratory":
+            bonus += 10
+
+        elif nom == "smithy":
+            bonus += 7
+
+        elif nom == "councilroom":
+            bonus += 7
+
+    # =====================================================
+    # Trop de terminaux
+    # =====================================================
+
+    if terminaux > supports:
+        if nom in (
+            CARTES_SUPPORT_ACTIONS
+        ):
+            bonus += min(
+                18,
+                (
+                    terminaux
+                    - supports
+                ) * 6,
+            )
+
+        if (
+            nom
+            in CARTES_TERMINALES
+        ):
+            bonus -= min(
+                28,
+                (
+                    terminaux
+                    - supports
+                ) * 8,
+            )
+
+    # =====================================================
+    # Trop de supports sans payload
+    # =====================================================
 
     if (
-        nom in EFFETS_ACTIONS
-        and nb_actions >= cible
+        supports
+        > terminaux + 2
     ):
-        bonus -= (
-            12
-            + (
-                nb_actions
-                - cible
-            ) * 8
-        )
+        if nom in (
+            CARTES_SUPPORT_ACTIONS
+        ):
+            bonus -= 10
+
+        if nom in {
+            "laboratory",
+            "smithy",
+            "councilroom",
+            "witch",
+        }:
+            bonus += 8
 
     return bonus
 
 
+# =========================================================
+# BONUS SELON LA MAIN
+# =========================================================
+
 def bonus_main(
     game: Game,
+    game_id: str,
     nom: str,
 ) -> int:
-    terminales = nombre_terminales_main(
+    moi = trouver_mon_joueur(
         game
     )
 
     if (
-        nom in CARTES_TERMINALES
-        and terminales >= 2
+        moi is None
+        or moi.hand is None
     ):
-        return -8
+        return 0
 
+    quantites = getattr(
+        moi.hand,
+        "quantities",
+        {},
+    )
+
+    cartes_main = {
+        normaliser_nom(
+            carte
+        )
+        for carte, quantite
+        in quantites.items()
+        if quantite > 0
+    }
+
+    bonus = 0
+
+    # Si une carte terminale est
+    # présente dans la main, les cartes
+    # +Actions ont un petit intérêt
+    # supplémentaire.
     if (
-        nom in CARTES_SUPPORT_ACTIONS
-        and terminales >= 1
+        cartes_main
+        & CARTES_TERMINALES
     ):
-        return 4
+        if nom in {
+            "village",
+            "farmingvillage",
+            "festival",
+        }:
+            bonus += 5
 
-    return 0
+    return bonus
 
+
+# =========================================================
+# BONUS SPÉCIFIQUES
+# =========================================================
 
 def bonus_carte_specifique(
     game: Game,
     game_id: str,
     nom: str,
 ) -> int:
-    bonus = 0
-
     etat = obtenir_etat(
         game_id
     )
 
-    tour = etat["tour"]
-
-    stock = cartes_stock_disponibles(
-        game
+    tour = int(
+        etat.get(
+            "tour",
+            0,
+        )
     )
 
-    if nom == "woodcutter":
-        if stock & {
-            "market",
-            "festival",
-            "councilroom",
-        }:
-            bonus -= 15
+    bonus = 0
 
-    if nom == "chancellor":
-        if tour <= 7:
-            bonus += 2
-
-        if tour >= 12:
-            bonus -= 10
-
-    if nom == "militia":
-        if tour <= 8:
-            bonus += 7
-
-        elif tour >= 16:
-            bonus -= 8
-
-        bonus += max(
-            0,
-            len(game.players) - 2,
-        ) * 4
-
-        if (
-            quantite_achetee(
-                game_id,
-                "councilroom",
-            ) > 0
-            and nombre_supports_achetes(
-                game_id
-            ) > 0
-        ):
-            bonus += 10
-
-    if nom == "bandit":
-        gold_restant = quantite_stock(
-            game,
-            "gold",
-        )
-
-        if gold_restant <= 0:
-            bonus -= 200
-
-        elif tour <= 10:
-            bonus += 9
-
-        elif tour >= 16:
-            bonus -= 12
-
-        bonus += max(
-            0,
-            len(game.players) - 2,
-        ) * 3
-
-        if (
-            quantite_economique(
-                game_id,
-                "gold",
-            ) <= 2
-        ):
-            bonus += 6
-
-    if nom == "laboratory":
-        nb_lab = quantite_achetee(
-            game_id,
-            "laboratory",
-        )
-
-        if nb_lab == 1:
-            bonus += 3
-
-        elif nb_lab == 2:
-            bonus += 2
-
-    if (
-        nom == "distantshore"
-        and quantite_achetee(
-            game_id,
-            "farmingvillage",
-        ) > 0
-    ):
-        bonus += 6
+    # -----------------------------------------------------
+    # Gardens
+    # -----------------------------------------------------
 
     if nom == "gardens":
         bonus += bonus_gardens(
@@ -1305,17 +1424,314 @@ def bonus_carte_specifique(
             game_id,
         )
 
+    # -----------------------------------------------------
+    # Militia
+    # -----------------------------------------------------
+
+    elif nom == "militia":
+        if tour <= 8:
+            bonus += 7
+
+        elif tour >= 16:
+            bonus -= 8
+
+        # Anciennement *4.
+        # Réduit après l'analyse des
+        # défaites multijoueurs.
+        bonus += max(
+            0,
+            len(
+                game.players
+            ) - 2,
+        ) * 2
+
+    # -----------------------------------------------------
+    # Witch
+    # -----------------------------------------------------
+
+    elif nom == "witch":
+        curses = curses_restantes(
+            game
+        )
+
+        if curses > 0:
+            bonus += min(
+                14,
+                curses // 3,
+            )
+
+        bonus += max(
+            0,
+            len(
+                game.players
+            ) - 2,
+        ) * 3
+
+        if curses <= 3:
+            bonus -= 12
+
+    # -----------------------------------------------------
+    # Bandit
+    # -----------------------------------------------------
+
+    elif nom == "bandit":
+        bonus += max(
+            0,
+            len(
+                game.players
+            ) - 2,
+        ) * 3
+
+        if quantite_stock(
+            game,
+            "gold",
+        ) <= 5:
+            bonus -= 12
+
+    # -----------------------------------------------------
+    # Laboratory
+    # -----------------------------------------------------
+
+    elif nom == "laboratory":
+        # Très bon premier moteur.
+        if (
+            quantite_achetee(
+                game_id,
+                "laboratory",
+            )
+            == 0
+        ):
+            bonus += 5
+
+    # -----------------------------------------------------
+    # Smithy
+    # -----------------------------------------------------
+
+    elif nom == "smithy":
+        # Smithy est forte,
+        # mais terminale.
+        if (
+            nombre_supports_actions(
+                game_id
+            )
+            >= 1
+        ):
+            bonus += 5
+
+    # -----------------------------------------------------
+    # Council Room
+    # -----------------------------------------------------
+
+    elif nom == "councilroom":
+        if len(
+            game.players
+        ) >= 4:
+            # Les adversaires piochent aussi.
+            bonus -= 4
+
+    # -----------------------------------------------------
+    # Hireling
+    # -----------------------------------------------------
+
+    elif nom == "hireling":
+        if tour <= 8:
+            bonus += 7
+
+        elif tour >= 16:
+            bonus -= 12
+
+    # -----------------------------------------------------
+    # Distant Shore
+    # -----------------------------------------------------
+
+    elif nom == "distantshore":
+        if quantite_stock(
+            game,
+            "estate",
+        ) > 0:
+            bonus += 5
+
+        if tour >= 16:
+            bonus -= 8
+
+    # -----------------------------------------------------
+    # Chancellor
+    # -----------------------------------------------------
+
+    elif nom == "chancellor":
+        if tour <= 6:
+            bonus += 4
+
+        if tour >= 12:
+            bonus -= 8
+
+    # -----------------------------------------------------
+    # Woodcutter
+    # -----------------------------------------------------
+
+    elif nom == "woodcutter":
+        if tour >= 12:
+            bonus -= 8
+
     return bonus
 
+
+# =========================================================
+# SATURATION
+# =========================================================
+
+def malus_saturation(
+    game: Game,
+    game_id: str,
+    nom: str,
+) -> int:
+    quantite = quantite_achetee(
+        game_id,
+        nom,
+    )
+
+    # -----------------------------------------------------
+    # Silver
+    # -----------------------------------------------------
+
+    if nom == "silver":
+        return max(
+            0,
+            quantite - 2,
+        ) * 5
+
+    # -----------------------------------------------------
+    # Gold
+    #
+    # IMPORTANT :
+    # Bandit doit compter.
+    # -----------------------------------------------------
+
+    if nom == "gold":
+        richesse = (
+            quantite_economique(
+                game_id,
+                "gold",
+            )
+        )
+
+        malus = max(
+            0,
+            richesse - 4,
+        ) * 5
+
+        if richesse >= 8:
+            malus += 10
+
+        return malus
+
+    # -----------------------------------------------------
+    # Gardens
+    # -----------------------------------------------------
+
+    if nom == "gardens":
+        malus = (
+            quantite * 5
+        )
+
+        if quantite >= 3:
+            malus += (
+                quantite - 2
+            ) * 5
+
+        return malus
+
+    # -----------------------------------------------------
+    # Actions
+    # -----------------------------------------------------
+
+    if nom in (
+        MALUS_PAR_COPIE_EFFECTIFS
+    ):
+        return (
+            quantite
+            * MALUS_PAR_COPIE_EFFECTIFS[
+                nom
+            ]
+        )
+
+    return 0
+
+
+# =========================================================
+# LIMITES
+# =========================================================
+
+def malus_limite(
+    game: Game,
+    game_id: str,
+    nom: str,
+) -> int:
+    # Copper / Curse ne sont normalement
+    # même pas évalués dans choisir_achat(),
+    # mais protection supplémentaire.
+    if nom in {
+        "copper",
+        "curse",
+    }:
+        return 10000
+
+    if nom not in (
+        MAX_CARTES_ACTION
+    ):
+        return 0
+
+    quantite = quantite_achetee(
+        game_id,
+        nom,
+    )
+
+    maximum_carte = (
+        MAX_CARTES_ACTION.get(
+            nom
+        )
+    )
+
+    if (
+        maximum_carte is not None
+        and quantite
+        >= maximum_carte
+    ):
+        return 10000
+
+    total_actions = (
+        nombre_total_actions(
+            game_id
+        )
+    )
+
+    maximum_total = (
+        max_total_actions_dynamique(
+            game,
+            game_id,
+        )
+    )
+
+    if (
+        total_actions
+        >= maximum_total
+    ):
+        return 10000
+
+    return 0
+
+
+# =========================================================
+# CALCUL DU POIDS FINAL
+# =========================================================
 
 def calculer_poids_achat(
     game: Game,
     game_id: str,
-    nom: str,
+    carte: Any,
 ) -> dict[str, Any]:
-    base = POIDS_BASE_ACHAT.get(
-        nom,
-        -10000,
+    nom = normaliser_nom(
+        carte
     )
 
     strategie, scores = (
@@ -1325,88 +1741,134 @@ def calculer_poids_achat(
         )
     )
 
-    composants = {
+    base = (
+        POIDS_BASE_EFFECTIFS.get(
+            nom,
+            0,
+        )
+    )
+
+    synergies = bonus_synergies(
+        game,
+        game_id,
+        nom,
+    )
+
+    bonus_strat = (
+        bonus_strategie(
+            nom,
+            strategie,
+        )
+    )
+
+    economie = bonus_economie(
+        game,
+        game_id,
+        nom,
+    )
+
+    phase = bonus_phase_partie(
+        game,
+        game_id,
+        nom,
+    )
+
+    score = bonus_situation_score(
+        game,
+        game_id,
+        nom,
+    )
+
+    structure = bonus_structure(
+        game,
+        game_id,
+        nom,
+    )
+
+    main = bonus_main(
+        game,
+        game_id,
+        nom,
+    )
+
+    specifique = (
+        bonus_carte_specifique(
+            game,
+            game_id,
+            nom,
+        )
+    )
+
+    saturation = (
+        malus_saturation(
+            game,
+            game_id,
+            nom,
+        )
+    )
+
+    limite = malus_limite(
+        game,
+        game_id,
+        nom,
+    )
+
+    total = (
+        base
+        + synergies
+        + bonus_strat
+        + economie
+        + phase
+        + score
+        + structure
+        + main
+        + specifique
+        - saturation
+        - limite
+    )
+
+    return {
         "base":
             base,
 
         "synergies":
-            bonus_synergies(
-                game,
-                game_id,
-                nom,
-            ),
+            synergies,
 
+        # Important :
+        # ne pas utiliser la clé
+        # "strategie" pour ce nombre.
         "bonus_strategie":
-            bonus_strategie(
-                nom,
-                strategie,
-            ),
-
-        "economie":
-            bonus_economie(
-                game,
-                game_id,
-                nom,
-            ),
-
-        "phase":
-            bonus_phase_partie(
-                game,
-                game_id,
-                nom,
-            ),
-
-        "score":
-            bonus_situation_score(
-                game,
-                nom,
-            ),
-
-        "structure":
-            bonus_structure_deck(
-                game,
-                game_id,
-                nom,
-            ),
-
-        "main":
-            bonus_main(
-                game,
-                nom,
-            ),
-
-        "specifique":
-            bonus_carte_specifique(
-                game,
-                game_id,
-                nom,
-            ),
-
-        "saturation":
-            -malus_saturation(
-                game_id,
-                nom,
-            ),
-
-        "limite":
-            -malus_proximite_limite(
-                game_id,
-                nom,
-            ),
-    }
-
-    total = sum(
-        composants.values()
-    )
-
-    return {
-        **composants,
-
-        "total":
-            total,
+            bonus_strat,
 
         "strategie":
             strategie,
+
+        "economie":
+            economie,
+
+        "phase":
+            phase,
+
+        "score":
+            score,
+
+        "structure":
+            structure,
+
+        "main":
+            main,
+
+        "specifique":
+            specifique,
+
+        "saturation":
+            -saturation,
+
+        "limite":
+            -limite,
+
+        "total":
+            total,
 
         "scores_strategies":
             scores,
