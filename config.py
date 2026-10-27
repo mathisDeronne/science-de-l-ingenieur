@@ -95,11 +95,11 @@ POIDS_BASE_ACHAT = {
     "gold": 70,
     "silver": 46,
 
-    "bandit": 45,
+    "bandit": 43,
     "militia": 43,
-    "witch": 42,
+    "witch": 45,
 
-    "laboratory": 50,
+    "laboratory": 60,
     "smithy": 40,
     "market": 33,
     "festival": 32,
@@ -159,33 +159,188 @@ MALUS_PAR_COPIE_ACTION = {
 
 
 SYNERGIES_ACHAT = [
-    {"cartes": ("village", "smithy"),              "bonus": {"village": 18, "smithy": 18}},
-    {"cartes": ("village", "witch"),               "bonus": {"village": 14, "witch": 16}},
-    {"cartes": ("village", "councilroom"),         "bonus": {"village": 15, "councilroom": 18}},
-    {"cartes": ("village", "militia"),             "bonus": {"village": 12, "militia": 14}},
-    {"cartes": ("village", "bandit"),              "bonus": {"village": 12, "bandit": 15}},
-    {"cartes": ("village", "hireling"),            "bonus": {"village": 8, "hireling": 8}},
+    # =====================================================
+    # VILLAGE
+    # =====================================================
 
-    {"cartes": ("festival", "smithy"),             "bonus": {"festival": 15, "smithy": 16}},
-    {"cartes": ("festival", "witch"),              "bonus": {"festival": 12, "witch": 15}},
-    {"cartes": ("festival", "councilroom"),        "bonus": {"festival": 18, "councilroom": 20}},
-    {"cartes": ("festival", "militia"),            "bonus": {"festival": 10, "militia": 12}},
-    {"cartes": ("festival", "bandit"),             "bonus": {"festival": 10, "bandit": 13}},
-    {"cartes": ("festival", "hireling"),           "bonus": {"festival": 8, "hireling": 8}},
+    {"cartes": ("village", "smithy"),
+     "bonus": {"village": 18, "smithy": 18}},
 
-    {"cartes": ("farmingvillage", "smithy"),       "bonus": {"farmingvillage": 14, "smithy": 15}},
-    {"cartes": ("farmingvillage", "witch"),        "bonus": {"farmingvillage": 15, "witch": 16}},
-    {"cartes": ("farmingvillage", "councilroom"),  "bonus": {"farmingvillage": 16, "councilroom": 18}},
-    {"cartes": ("farmingvillage", "militia"),      "bonus": {"farmingvillage": 13, "militia": 14}},
-    {"cartes": ("farmingvillage", "bandit"),       "bonus": {"farmingvillage": 13, "bandit": 15}},
-    {"cartes": ("farmingvillage", "distantshore"), "bonus": {"farmingvillage": 12, "distantshore": 10}},
-    {"cartes": ("farmingvillage", "hireling"),     "bonus": {"farmingvillage": 8, "hireling": 8}},
+    {"cartes": ("village", "witch"),
+     "bonus": {"village": 14, "witch": 16}},
 
-    {"cartes": ("laboratory", "witch"),            "bonus": {"laboratory": 13, "witch": 17}},
-    {"cartes": ("laboratory", "market"),           "bonus": {"laboratory": 10, "market": 10}},
+    {"cartes": ("village", "councilroom"),
+     "bonus": {"village": 15, "councilroom": 18}},
 
-    {"cartes": ("distantshore", "gardens"),        "bonus": {"distantshore": 4, "gardens": 10}},
-    {"cartes": ("bandit", "gardens"),              "bonus": {"bandit": 3, "gardens": 7}},
+    {"cartes": ("village", "militia"),
+     "bonus": {"village": 12, "militia": 14}},
+
+    {"cartes": ("village", "bandit"),
+     "bonus": {"village": 12, "bandit": 15}},
+
+    {"cartes": ("village", "hireling"),
+     "bonus": {"village": 8, "hireling": 8}},
+
+    {"cartes": ("village", "laboratory"),
+     "bonus": {"village": 7, "laboratory": 9}},
+
+    {"cartes": ("village", "distantshore"),
+     "bonus": {"village": 8, "distantshore": 9}},
+
+    {"cartes": ("village", "market"),
+     "bonus": {"village": 5, "market": 6}},
+
+
+    # =====================================================
+    # FESTIVAL
+    # =====================================================
+
+    {"cartes": ("festival", "smithy"),
+     "bonus": {"festival": 15, "smithy": 16}},
+
+    {"cartes": ("festival", "witch"),
+     "bonus": {"festival": 12, "witch": 15}},
+
+    {"cartes": ("festival", "councilroom"),
+     "bonus": {"festival": 18, "councilroom": 20}},
+
+    {"cartes": ("festival", "militia"),
+     "bonus": {"festival": 10, "militia": 12}},
+
+    {"cartes": ("festival", "bandit"),
+     "bonus": {"festival": 10, "bandit": 13}},
+
+    {"cartes": ("festival", "hireling"),
+     "bonus": {"festival": 8, "hireling": 8}},
+
+    {"cartes": ("festival", "laboratory"),
+     "bonus": {"festival": 9, "laboratory": 10}},
+
+    {"cartes": ("festival", "market"),
+     "bonus": {"festival": 6, "market": 7}},
+
+    {"cartes": ("festival", "distantshore"),
+     "bonus": {"festival": 8, "distantshore": 9}},
+
+
+    # =====================================================
+    # FARMING VILLAGE
+    # =====================================================
+
+    {"cartes": ("farmingvillage", "smithy"),
+     "bonus": {"farmingvillage": 14, "smithy": 15}},
+
+    {"cartes": ("farmingvillage", "witch"),
+     "bonus": {"farmingvillage": 15, "witch": 16}},
+
+    {"cartes": ("farmingvillage", "councilroom"),
+     "bonus": {"farmingvillage": 16, "councilroom": 18}},
+
+    {"cartes": ("farmingvillage", "militia"),
+     "bonus": {"farmingvillage": 13, "militia": 14}},
+
+    {"cartes": ("farmingvillage", "bandit"),
+     "bonus": {"farmingvillage": 13, "bandit": 15}},
+
+    {"cartes": ("farmingvillage", "distantshore"),
+     "bonus": {"farmingvillage": 12, "distantshore": 10}},
+
+    {"cartes": ("farmingvillage", "hireling"),
+     "bonus": {"farmingvillage": 8, "hireling": 8}},
+
+    {"cartes": ("farmingvillage", "laboratory"),
+     "bonus": {"farmingvillage": 10, "laboratory": 11}},
+
+    {"cartes": ("farmingvillage", "market"),
+     "bonus": {"farmingvillage": 7, "market": 7}},
+
+
+    # =====================================================
+    # LABORATORY
+    # =====================================================
+
+    {"cartes": ("laboratory", "witch"),
+     "bonus": {"laboratory": 13, "witch": 17}},
+
+    {"cartes": ("laboratory", "market"),
+     "bonus": {"laboratory": 10, "market": 10}},
+
+    {"cartes": ("laboratory", "smithy"),
+     "bonus": {"laboratory": 11, "smithy": 9}},
+
+    {"cartes": ("laboratory", "militia"),
+     "bonus": {"laboratory": 11, "militia": 8}},
+
+    {"cartes": ("laboratory", "bandit"),
+     "bonus": {"laboratory": 10, "bandit": 8}},
+
+    {"cartes": ("laboratory", "councilroom"),
+     "bonus": {"laboratory": 9, "councilroom": 10}},
+
+    {"cartes": ("laboratory", "hireling"),
+     "bonus": {"laboratory": 8, "hireling": 8}},
+
+    {"cartes": ("laboratory", "distantshore"),
+     "bonus": {"laboratory": 9, "distantshore": 9}},
+
+
+    # =====================================================
+    # MARKET
+    # =====================================================
+
+    {"cartes": ("market", "smithy"),
+     "bonus": {"market": 10, "smithy": 10}},
+
+    {"cartes": ("market", "witch"),
+     "bonus": {"market": 9, "witch": 10}},
+
+    {"cartes": ("market", "councilroom"),
+     "bonus": {"market": 11, "councilroom": 12}},
+
+    {"cartes": ("market", "militia"),
+     "bonus": {"market": 8, "militia": 7}},
+
+    {"cartes": ("market", "bandit"),
+     "bonus": {"market": 8, "bandit": 7}},
+
+    {"cartes": ("market", "hireling"),
+     "bonus": {"market": 7, "hireling": 7}},
+
+    {"cartes": ("market", "distantshore"),
+     "bonus": {"market": 8, "distantshore": 8}},
+
+
+    # =====================================================
+    # SMITHY
+    # =====================================================
+
+    {"cartes": ("smithy", "hireling"),
+     "bonus": {"smithy": 7, "hireling": 8}},
+
+    {"cartes": ("smithy", "distantshore"),
+     "bonus": {"smithy": 7, "distantshore": 8}},
+
+
+    # =====================================================
+    # COUNCIL ROOM
+    # =====================================================
+
+    {"cartes": ("councilroom", "hireling"),
+     "bonus": {"councilroom": 8, "hireling": 7}},
+
+    {"cartes": ("councilroom", "distantshore"),
+     "bonus": {"councilroom": 8, "distantshore": 8}},
+
+
+    # =====================================================
+    # GARDENS
+    # =====================================================
+
+    {"cartes": ("distantshore", "gardens"),
+     "bonus": {"distantshore": 4, "gardens": 10}},
+
+    {"cartes": ("bandit", "gardens"),
+     "bonus": {"bandit": 3, "gardens": 7}},
 ]
 
 
@@ -195,10 +350,10 @@ PRIORITE_DEPARTAGE = [
     "gardens",
     "gold",
 
+    "laboratory",
     "witch",
     "bandit",
     "militia",
-    "laboratory",
 
     "silver",
 
