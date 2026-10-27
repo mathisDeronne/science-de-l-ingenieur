@@ -25,8 +25,20 @@ DOSSIER_LOGS.mkdir(
     exist_ok=True
 )
 
+
+DOSSIER_RESUMES = (
+    DOSSIER_LOGS
+    / "resumes"
+)
+
+DOSSIER_RESUMES.mkdir(
+    exist_ok=True
+)
+
+
 MAX_PARTIES_LOGS = 500
 TAILLE_RESUME = 100
+
 
 FICHIER_STATS = (
     DOSSIER_LOGS
@@ -101,11 +113,9 @@ def ecrire_json_atomique(
     fichier: Path,
     contenu: dict[str, Any],
 ) -> None:
-    temporaire = (
-        fichier.with_suffix(
-            fichier.suffix
-            + ".tmp"
-        )
+    temporaire = fichier.with_suffix(
+        fichier.suffix
+        + ".tmp"
     )
 
     temporaire.write_text(
@@ -139,8 +149,10 @@ def nouvel_historique(
 ) -> dict[str, Any]:
     return {
         "game_id": game_id,
+
         "debut": maintenant(),
         "fin": None,
+
         "resultat": None,
 
         "abandon": False,
@@ -216,7 +228,8 @@ def afficher_situation(
 
     piles_basses = sorted(
         stock.items(),
-        key=lambda item: item[1],
+        key=lambda item:
+            item[1],
     )[:3]
 
     argent = (
@@ -225,6 +238,16 @@ def afficher_situation(
         )
         + etat["bonus_pieces"]
     )
+
+    cartes_basiques = {
+        "province",
+        "duchy",
+        "estate",
+        "gold",
+        "silver",
+        "copper",
+        "curse",
+    }
 
     situation = {
         "tour":
@@ -277,6 +300,14 @@ def afficher_situation(
                 ]
             ),
 
+        "gains_estimes":
+            dict(
+                etat.get(
+                    "gains_estimes",
+                    {},
+                )
+            ),
+
         "stock": {
             nom:
                 stock.get(
@@ -291,6 +322,14 @@ def afficher_situation(
                 "silver",
                 "curse",
             )
+        },
+
+        "royaume": {
+            nom:
+                quantite
+            for nom, quantite
+            in stock.items()
+            if nom not in cartes_basiques
         },
 
         "piles_vides":
@@ -373,24 +412,12 @@ def afficher_situation(
             historique,
         )
 
-    print(
-        f">>> T{etat['tour']} "
-        f"| score={moi.score} "
-        f"| argent={argent} "
-        f"| achats="
-        f"{etat['cartes_achetees']}",
-        flush=True,
-    )
-
 
 def enregistrer_decision(
     game_id: str,
     tour: int,
     decision: str,
 ) -> None:
-    # Récupération de l'état avant
-    # le verrou du fichier pour éviter
-    # d'inverser l'ordre des verrous.
     etat = obtenir_etat(
         game_id
     )
@@ -449,12 +476,19 @@ def enregistrer_decision(
         ):
             return
 
-        situation.setdefault(
+        decisions = situation.setdefault(
             "decisions",
             [],
-        ).append(
-            decision
         )
+
+        if (
+            not decisions
+            or decisions[-1]
+            != decision
+        ):
+            decisions.append(
+                decision
+            )
 
         if evaluation is not None:
             situation.setdefault(
@@ -614,23 +648,21 @@ def nom_final(
 
 def fichiers_logs_finalises(
 ) -> list[Path]:
-    fichiers = []
-
     motif = re.compile(
         r"^\d{8}[VDF]_.+\.json$"
     )
 
-    for fichier in (
-        DOSSIER_LOGS.glob(
-            "*.json"
+    fichiers = [
+        fichier
+        for fichier in (
+            DOSSIER_LOGS.glob(
+                "*.json"
+            )
         )
-    ):
         if motif.match(
             fichier.name
-        ):
-            fichiers.append(
-                fichier
-            )
+        )
+    ]
 
     fichiers.sort(
         key=lambda fichier:
@@ -668,6 +700,7 @@ def stats_vides(
 ) -> dict[str, Any]:
     return {
         "parties_terminees": 0,
+        "parties_depuis_resume": 0,
         "dernier_resume": 0,
         "logs_recents": [],
     }
@@ -676,7 +709,47 @@ def stats_vides(
 def charger_stats(
 ) -> dict[str, Any]:
     if not FICHIER_STATS.exists():
-        return stats_vides()
+        stats = stats_vides()
+
+        fichiers = (
+            fichiers_logs_finalises()
+        )
+
+        chronologiques = list(
+            reversed(
+                fichiers[
+                    :MAX_PARTIES_LOGS
+                ]
+            )
+        )
+
+        stats[
+            "parties_terminees"
+        ] = len(fichiers)
+
+        stats[
+            "logs_recents"
+        ] = [
+            fichier.name
+            for fichier
+            in chronologiques
+        ]
+
+        # Si on possède déjà au moins
+        # 100 logs mais aucun _stats,
+        # le prochain end_game créera
+        # immédiatement un résumé.
+        if len(fichiers) >= TAILLE_RESUME:
+            stats[
+                "parties_depuis_resume"
+            ] = TAILLE_RESUME
+
+        else:
+            stats[
+                "parties_depuis_resume"
+            ] = len(fichiers)
+
+        return stats
 
     try:
         stats = json.loads(
@@ -704,6 +777,16 @@ def charger_stats(
     stats.setdefault(
         "logs_recents",
         [],
+    )
+
+    stats.setdefault(
+        "parties_depuis_resume",
+        (
+            stats[
+                "parties_terminees"
+            ]
+            % TAILLE_RESUME
+        ),
     )
 
     return stats
@@ -812,15 +895,8 @@ def generer_resume(
         "F": 0,
     }
 
-    par_joueurs: dict[
-        str,
-        dict[str, Any],
-    ] = {}
-
-    strategies: dict[
-        str,
-        int,
-    ] = {}
+    par_joueurs = {}
+    strategies = {}
 
     tours = []
     scores = []
@@ -832,6 +908,11 @@ def generer_resume(
         "province": [],
         "duchy": [],
         "estate": [],
+        "gardens": [],
+        "witch": [],
+        "militia": [],
+        "bandit": [],
+        "laboratory": [],
     }
 
     for historique in logs:
@@ -864,17 +945,11 @@ def generer_resume(
                 )
             )
 
-            if (
-                resultat
-                in stats_joueurs
-            ):
+            if resultat in stats_joueurs:
                 stats_joueurs[
                     resultat
                 ] += 1
 
-        # Les forfaits apparaissent
-        # dans les résultats mais ne
-        # polluent pas les moyennes.
         if resultat == "F":
             continue
 
@@ -925,8 +1000,7 @@ def generer_resume(
                 nom,
                 0,
             )
-            for nom
-            in EFFETS_ACTIONS
+            for nom in EFFETS_ACTIONS
         )
 
         actions.append(
@@ -961,7 +1035,8 @@ def generer_resume(
 
     win_rate = (
         round(
-            v / (v + d)
+            v
+            / (v + d)
             * 100,
             1,
         )
@@ -979,7 +1054,8 @@ def generer_resume(
             "win_rate"
         ] = (
             round(
-                vj / (vj + dj)
+                vj
+                / (vj + dj)
                 * 100,
                 1,
             )
@@ -996,6 +1072,18 @@ def generer_resume(
 
         "fenetre":
             len(logs),
+
+        "plage": {
+            "premier_log":
+                noms_logs[0]
+                if noms_logs
+                else None,
+
+            "dernier_log":
+                noms_logs[-1]
+                if noms_logs
+                else None,
+        },
 
         "resultats": {
             **resultats,
@@ -1016,32 +1104,14 @@ def generer_resume(
             "actions_achetees":
                 moyenne(actions),
 
-            "gold":
-                moyenne(
-                    achats["gold"]
-                ),
-
-            "silver":
-                moyenne(
-                    achats["silver"]
-                ),
-
-            "province":
-                moyenne(
-                    achats[
-                        "province"
-                    ]
-                ),
-
-            "duchy":
-                moyenne(
-                    achats["duchy"]
-                ),
-
-            "estate":
-                moyenne(
-                    achats["estate"]
-                ),
+            **{
+                nom:
+                    moyenne(
+                        valeurs
+                    )
+                for nom, valeurs
+                in achats.items()
+            },
         },
 
         "strategies":
@@ -1066,6 +1136,12 @@ def generer_resume(
 
             "logs_conserves_max":
                 MAX_PARTIES_LOGS,
+
+            "taille_resume":
+                TAILLE_RESUME,
+
+            "dossier_resumes":
+                "logs/resumes",
         },
     }
 
@@ -1080,6 +1156,10 @@ def enregistrer_partie_terminee(
             "parties_terminees"
         ] += 1
 
+        stats[
+            "parties_depuis_resume"
+        ] += 1
+
         total = stats[
             "parties_terminees"
         ]
@@ -1092,9 +1172,6 @@ def enregistrer_partie_terminee(
             nom_fichier
         )
 
-        # Pas besoin de conserver
-        # plus de références que de
-        # logs individuels.
         if (
             len(logs_recents)
             > MAX_PARTIES_LOGS
@@ -1104,9 +1181,12 @@ def enregistrer_partie_terminee(
             ]
 
         if (
-            total
-            % TAILLE_RESUME
-            == 0
+            stats[
+                "parties_depuis_resume"
+            ]
+            >= TAILLE_RESUME
+            and len(logs_recents)
+            >= TAILLE_RESUME
         ):
             derniers_100 = (
                 logs_recents[
@@ -1120,7 +1200,7 @@ def enregistrer_partie_terminee(
             )
 
             fichier_resume = (
-                DOSSIER_LOGS
+                DOSSIER_RESUMES
                 / (
                     f"resume_"
                     f"{total:06d}"
@@ -1136,6 +1216,16 @@ def enregistrer_partie_terminee(
             stats[
                 "dernier_resume"
             ] = total
+
+            stats[
+                "parties_depuis_resume"
+            ] = 0
+
+            print(
+                f">>> Résumé créé : "
+                f"{fichier_resume.name}",
+                flush=True,
+            )
 
         ecrire_json_atomique(
             FICHIER_STATS,
@@ -1157,8 +1247,6 @@ def terminer_historique(
             )
         )
 
-        # Empêche un double /end_game
-        # de compter deux fois.
         if not temporaire.exists():
             return
 

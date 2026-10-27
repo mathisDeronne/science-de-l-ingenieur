@@ -6,6 +6,7 @@ from dopynion.data_model import (
 
 from config import (
     EFFETS_ACTIONS,
+    GAINS_ACTIONS,
     MAX_CARTES_ACTION,
     POIDS_MINIMUM_ACHAT,
     PRIORITE_ACTION,
@@ -13,9 +14,11 @@ from config import (
 )
 from game_utils import (
     calculer_argent_main,
+    quantite_stock,
     trouver_mon_joueur,
 )
 from state import (
+    enregistrer_gain_estime,
     nombre_carte_achetee,
     nombre_total_actions_achetees,
     obtenir_etat,
@@ -36,8 +39,7 @@ def choisir_action(
 
     if (
         etat["phase_achat"]
-        or etat["actions_restantes"]
-        <= 0
+        or etat["actions_restantes"] <= 0
     ):
         return None
 
@@ -69,6 +71,7 @@ def choisir_action(
 
 
 def appliquer_effet_action(
+    game: Game,
     game_id: str,
     carte: CardName,
 ) -> None:
@@ -76,8 +79,10 @@ def appliquer_effet_action(
         game_id
     )
 
+    nom = carte.value.lower()
+
     effet = EFFETS_ACTIONS.get(
-        carte.value.lower(),
+        nom,
         {
             "actions": 0,
             "achats": 0,
@@ -88,8 +93,7 @@ def appliquer_effet_action(
     etat[
         "actions_restantes"
     ] += (
-        effet["actions"]
-        - 1
+        effet["actions"] - 1
     )
 
     etat[
@@ -99,6 +103,29 @@ def appliquer_effet_action(
     etat[
         "bonus_pieces"
     ] += effet["pieces"]
+
+    for nom_gain, quantite in (
+        GAINS_ACTIONS.get(
+            nom,
+            {},
+        ).items()
+    ):
+        disponible = quantite_stock(
+            game,
+            nom_gain,
+        )
+
+        if disponible <= 0:
+            continue
+
+        enregistrer_gain_estime(
+            game_id,
+            nom_gain,
+            min(
+                quantite,
+                disponible,
+            ),
+        )
 
 
 def commencer_phase_achat(
@@ -112,14 +139,18 @@ def commencer_phase_achat(
     if etat["phase_achat"]:
         return
 
-    etat["argent_restant"] = (
+    etat[
+        "argent_restant"
+    ] = (
         calculer_argent_main(
             game
         )
         + etat["bonus_pieces"]
     )
 
-    etat["phase_achat"] = True
+    etat[
+        "phase_achat"
+    ] = True
 
 
 def carte_action_autorisee(
@@ -144,18 +175,14 @@ def carte_action_autorisee(
     ):
         return False
 
-    maximum_total = (
-        max_total_actions_dynamique(
-            game,
-            game_id,
-        )
-    )
-
     return (
         nombre_total_actions_achetees(
             game_id
         )
-        < maximum_total
+        < max_total_actions_dynamique(
+            game,
+            game_id,
+        )
     )
 
 

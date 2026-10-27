@@ -100,7 +100,7 @@ def risque_fin_par_piles(
 
     return (
         len(trois_piles) == 3
-        and sum(trois_piles)
+        and sum(tri_pile for tri_pile in trois_piles)
         <= len(game.players)
     )
 

@@ -36,6 +36,7 @@ def nouvel_etat_partie() -> dict[str, Any]:
         "phase_achat": False,
 
         "cartes_achetees": {},
+        "gains_estimes": {},
 
         "strategie_actuelle": None,
         "scores_strategies": {},
@@ -71,17 +72,12 @@ def demarrer_tour(
         )
 
         etat["tour"] += 1
-
         etat["actions_restantes"] = 1
         etat["achats_restants"] = 1
         etat["bonus_pieces"] = 0
-
         etat["argent_restant"] = None
         etat["phase_achat"] = False
-
-        etat[
-            "derniere_evaluation_achat"
-        ] = {}
+        etat["derniere_evaluation_achat"] = {}
 
         return etat
 
@@ -103,6 +99,45 @@ def enregistrer_achat(
                 0,
             )
             + 1
+        )
+
+
+def enregistrer_gain_estime(
+    game_id: str,
+    nom_carte: str,
+    quantite: int = 1,
+) -> None:
+    with verrou_partie(game_id):
+        etat = obtenir_etat(
+            game_id
+        )
+
+        gains = etat[
+            "gains_estimes"
+        ]
+
+        gains[nom_carte] = (
+            gains.get(
+                nom_carte,
+                0,
+            )
+            + quantite
+        )
+
+
+def nombre_gain_estime(
+    game_id: str,
+    nom_carte: str,
+) -> int:
+    with verrou_partie(game_id):
+        return obtenir_etat(
+            game_id
+        ).get(
+            "gains_estimes",
+            {},
+        ).get(
+            nom_carte,
+            0,
         )
 
 
@@ -128,7 +163,9 @@ def nombre_total_actions_achetees(
         )
 
         return sum(
-            etat["cartes_achetees"].get(
+            etat[
+                "cartes_achetees"
+            ].get(
                 nom,
                 0,
             )

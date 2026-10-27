@@ -17,9 +17,7 @@ from dopynion.data_model import (
     PossibleCards,
 )
 
-from config import (
-    obtenir_nom_joueur,
-)
+from config import obtenir_nom_joueur
 from game_utils import (
     bot_officiel_en_face,
 )
@@ -169,6 +167,7 @@ def play(
 
         if action is not None:
             appliquer_effet_action(
+                game,
                 x_game_id,
                 action,
             )
@@ -284,11 +283,17 @@ def choisir_carte_faible(
 ):
     ordre = [
         "curse",
+
         "estate",
-        "copper",
+        "gardens",
         "duchy",
-        "woodcutter",
         "province",
+
+        "chancellor",
+        "woodcutter",
+
+        "copper",
+
         "silver",
         "gold",
     ]
@@ -496,7 +501,10 @@ def confirm_discard_deck(
         alias="x-game-id",
     ),
 ) -> bool:
-    return True
+    # Chancellor :
+    # on refuse pour l'instant de
+    # défausser aveuglément tout le deck.
+    return False
 
 
 @app.post(
