@@ -67,7 +67,7 @@ PRIORITE_ACTION = [
 
 
 MAX_CARTES_ACTION = {
-    "laboratory": 4,
+    "laboratory": 3,
     "smithy": 2,
     "festival": 2,
     "market": 2,
@@ -141,7 +141,7 @@ CARTES_SUPPORT_ACTIONS = {
 
 
 MALUS_PAR_COPIE_ACTION = {
-    "laboratory": 5,
+    "laboratory": 9,
     "smithy": 12,
     "festival": 8,
     "market": 7,
