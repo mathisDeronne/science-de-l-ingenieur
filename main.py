@@ -8,6 +8,7 @@ from fastapi import (
 from fastapi.responses import (
     HTMLResponse,
 )
+from pydantic import BaseModel
 
 from dopynion.cards import Card
 from dopynion.data_model import (
@@ -45,6 +46,11 @@ from strategy import (
 
 
 app = FastAPI()
+
+
+class DopynionResponseStr(BaseModel):
+    game_id: str
+    decision: str
 
 
 @app.get(
@@ -122,7 +128,7 @@ def play(
         ...,
         alias="x-game-id",
     ),
-) -> str:
+) -> DopynionResponseStr:
     with verrou_partie(
         x_game_id
     ):
@@ -142,7 +148,10 @@ def play(
                 "END_TURN",
             )
 
-            return "END_TURN"
+            return DopynionResponseStr(
+                game_id=x_game_id,
+                decision="END_TURN",
+            )
 
         if bot_officiel_en_face(
             game
@@ -158,7 +167,10 @@ def play(
                 "END_TURN",
             )
 
-            return "END_TURN"
+            return DopynionResponseStr(
+                game_id=x_game_id,
+                decision="END_TURN",
+            )
 
         action = choisir_action(
             game,
@@ -183,7 +195,10 @@ def play(
                 decision,
             )
 
-            return decision
+            return DopynionResponseStr(
+                game_id=x_game_id,
+                decision=decision,
+            )
 
         commencer_phase_achat(
             game,
@@ -224,7 +239,10 @@ def play(
                 decision,
             )
 
-            return decision
+            return DopynionResponseStr(
+                game_id=x_game_id,
+                decision=decision,
+            )
 
         enregistrer_decision(
             x_game_id,
@@ -232,7 +250,10 @@ def play(
             "END_TURN",
         )
 
-        return "END_TURN"
+        return DopynionResponseStr(
+            game_id=x_game_id,
+            decision="END_TURN",
+        )
 
 
 @app.get("/end_game")
