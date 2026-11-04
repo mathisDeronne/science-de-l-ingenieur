@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 import os
 import re
@@ -8,9 +6,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import config
 from dopynion.data_model import Game
 
+from config import EFFETS_ACTIONS
 from game_utils import (
     calculer_argent_main,
     nombre_piles_vides,
@@ -19,743 +17,334 @@ from game_utils import (
 from state import obtenir_etat
 
 
-# ============================================================
-# CONFIGURATION
-# ============================================================
+DOSSIER_LOGS = (
+    Path(__file__).resolve().parent
+    / "logs"
+)
 
-MAX_LOGS = 500
-TAILLE_RESUME = 100
-
-# Change cette valeur à chaque grosse version stratégique.
-VERSION_STRATEGIE = getattr(
-    config,
-    "VERSION_STRATEGIE",
-    "noncumul-v1",
+DOSSIER_LOGS.mkdir(
+    exist_ok=True
 )
 
 
-# ============================================================
-# CHEMINS ABSOLUS
-# ============================================================
-#
-# Important :
-# on ne dépend plus du dossier courant utilisé par FastAPI /
-# Alwaysdata.
-#
-# Les logs seront TOUJOURS créés à côté de logger_utils.py :
-#
-# projet/
-# ├── logger_utils.py
-# └── logs/
-#     └── resumes/
-# ============================================================
-
-BASE_DIR = Path(__file__).resolve().parent
-
-DOSSIER_LOGS = BASE_DIR / "logs"
-DOSSIER_RESUMES = DOSSIER_LOGS / "resumes"
-
-FICHIER_STATS = DOSSIER_LOGS / "_stats.json"
-
-DOSSIER_LOGS.mkdir(
-    parents=True,
-    exist_ok=True,
+DOSSIER_RESUMES = (
+    DOSSIER_LOGS
+    / "resumes"
 )
 
 DOSSIER_RESUMES.mkdir(
-    parents=True,
-    exist_ok=True,
+    exist_ok=True
 )
 
 
-print(
-    "[LOGGER INIT]",
-    {
-        "pid": os.getpid(),
-        "cwd": os.getcwd(),
-        "base_dir": str(BASE_DIR),
-        "logs": str(DOSSIER_LOGS),
-        "resumes": str(DOSSIER_RESUMES),
-        "writable": os.access(
-            DOSSIER_LOGS,
-            os.W_OK,
-        ),
-        "version_strategie": VERSION_STRATEGIE,
-    },
-    flush=True,
+MAX_PARTIES_LOGS = 500
+TAILLE_RESUME = 100
+
+
+FICHIER_STATS = (
+    DOSSIER_LOGS
+    / "_stats.json"
 )
 
 
-# ============================================================
-# MÉMOIRE
-# ============================================================
+_verrous_logs_parties: dict[
+    str,
+    threading.RLock,
+] = {}
 
-_historiques: dict[str, dict[str, Any]] = {}
+_verrou_registre_logs = (
+    threading.Lock()
+)
 
-_verrou_logs = threading.RLock()
+_verrou_resume = (
+    threading.RLock()
+)
 
 
-# ============================================================
-# OUTILS
-# ============================================================
+def verrou_log_partie(
+    game_id: str,
+) -> threading.RLock:
+    verrou = (
+        _verrous_logs_parties.get(
+            game_id
+        )
+    )
 
-def maintenant_iso() -> str:
-    return datetime.now().astimezone().isoformat(
-        timespec="seconds"
+    if verrou is not None:
+        return verrou
+
+    with _verrou_registre_logs:
+        return (
+            _verrous_logs_parties
+            .setdefault(
+                game_id,
+                threading.RLock(),
+            )
+        )
+
+
+def maintenant() -> str:
+    return (
+        datetime
+        .now()
+        .astimezone()
+        .isoformat(
+            timespec="seconds"
+        )
     )
 
 
-def nom_carte(carte: Any) -> str:
-    """
-    Convertit CardName / Enum / str vers un nom lowercase.
-    """
-
-    valeur = getattr(
-        carte,
-        "value",
-        carte,
+def nom_temporaire(
+    game_id: str,
+) -> str:
+    propre = re.sub(
+        r"[^a-zA-Z0-9_-]",
+        "_",
+        str(game_id),
     )
 
-    return str(valeur).lower()
-
-
-def rendre_json_serialisable(
-    valeur: Any,
-) -> Any:
-    """
-    Rend récursivement une valeur sérialisable en JSON.
-    """
-
-    if valeur is None:
-        return None
-
-    if isinstance(
-        valeur,
-        (
-            str,
-            int,
-            float,
-            bool,
-        ),
-    ):
-        return valeur
-
-    if isinstance(
-        valeur,
-        Path,
-    ):
-        return str(valeur)
-
-    if isinstance(
-        valeur,
-        dict,
-    ):
-        return {
-            str(
-                getattr(
-                    cle,
-                    "value",
-                    cle,
-                )
-            ): rendre_json_serialisable(
-                contenu
-            )
-            for cle, contenu
-            in valeur.items()
-        }
-
-    if isinstance(
-        valeur,
-        (
-            list,
-            tuple,
-            set,
-        ),
-    ):
-        return [
-            rendre_json_serialisable(
-                element
-            )
-            for element
-            in valeur
-        ]
-
-    enum_value = getattr(
-        valeur,
-        "value",
-        None,
+    return (
+        f"game_{propre}.json"
     )
 
-    if enum_value is not None:
-        return rendre_json_serialisable(
-            enum_value
+
+def chemin_temporaire(
+    game_id: str,
+) -> Path:
+    return (
+        DOSSIER_LOGS
+        / nom_temporaire(
+            game_id
         )
-
-    if hasattr(
-        valeur,
-        "model_dump",
-    ):
-        return rendre_json_serialisable(
-            valeur.model_dump()
-        )
-
-    if hasattr(
-        valeur,
-        "dict",
-    ):
-        try:
-            return rendre_json_serialisable(
-                valeur.dict()
-            )
-        except Exception:
-            pass
-
-    return str(valeur)
-
-
-def extraire_quantites(
-    objet: Any,
-) -> dict[str, int]:
-    """
-    Supporte :
-    - Hand.quantities
-    - dict
-    - liste de cartes
-    - objet itérable
-    """
-
-    if objet is None:
-        return {}
-
-    if hasattr(
-        objet,
-        "quantities",
-    ):
-        brut = objet.quantities
-
-        return {
-            nom_carte(carte): int(qte)
-            for carte, qte
-            in brut.items()
-        }
-
-    if hasattr(
-        objet,
-        "hand",
-    ):
-        return extraire_quantites(
-            objet.hand
-        )
-
-    if isinstance(
-        objet,
-        dict,
-    ):
-        return {
-            nom_carte(carte): int(qte)
-            for carte, qte
-            in objet.items()
-        }
-
-    if isinstance(
-        objet,
-        (
-            list,
-            tuple,
-            set,
-        ),
-    ):
-        quantites: dict[str, int] = {}
-
-        for carte in objet:
-            nom = nom_carte(carte)
-
-            quantites[nom] = (
-                quantites.get(
-                    nom,
-                    0,
-                )
-                + 1
-            )
-
-        return quantites
-
-    try:
-        cartes = list(objet)
-    except TypeError:
-        return {}
-
-    quantites: dict[str, int] = {}
-
-    for carte in cartes:
-        nom = nom_carte(carte)
-
-        quantites[nom] = (
-            quantites.get(
-                nom,
-                0,
-            )
-            + 1
-        )
-
-    return quantites
-
-
-def extraire_stock(
-    game: Game,
-) -> dict[str, int]:
-    stock = getattr(
-        game,
-        "stock",
-        None,
     )
-
-    if stock is None:
-        return {}
-
-    quantites = getattr(
-        stock,
-        "quantities",
-        {},
-    )
-
-    return {
-        nom_carte(carte): int(qte)
-        for carte, qte
-        in quantites.items()
-    }
-
-
-def extraire_scores(
-    game: Game,
-) -> dict[str, int]:
-    scores: dict[str, int] = {}
-
-    for joueur in getattr(
-        game,
-        "players",
-        [],
-    ):
-        nom = str(
-            getattr(
-                joueur,
-                "name",
-                "???",
-            )
-        )
-
-        try:
-            score = int(
-                getattr(
-                    joueur,
-                    "score",
-                    0,
-                )
-            )
-        except Exception:
-            score = 0
-
-        scores[nom] = score
-
-    return scores
-
-
-def royaume_depuis_stock(
-    stock: dict[str, int],
-) -> dict[str, int]:
-    cartes_base = {
-        "copper",
-        "silver",
-        "gold",
-        "estate",
-        "duchy",
-        "province",
-        "curse",
-    }
-
-    return {
-        nom: qte
-        for nom, qte
-        in stock.items()
-        if nom not in cartes_base
-    }
-
-
-def piles_basses_depuis_royaume(
-    royaume: dict[str, int],
-    limite: int = 3,
-) -> list[list[Any]]:
-    return [
-        [
-            nom,
-            qte,
-        ]
-        for nom, qte
-        in sorted(
-            royaume.items(),
-            key=lambda item: (
-                item[1],
-                item[0],
-            ),
-        )[:limite]
-    ]
-
-
-def obtenir_argent_log(
-    game: Game,
-    etat: dict[str, Any],
-) -> int:
-    """
-    Essaie d'abord les valeurs locales du moteur.
-    Sinon recalcule l'argent de la main.
-    """
-
-    cles_possibles = (
-        "budget_restant",
-        "budget_achat_restant",
-        "argent_restant",
-        "argent",
-    )
-
-    for cle in cles_possibles:
-        valeur = etat.get(
-            cle,
-        )
-
-        if isinstance(
-            valeur,
-            (
-                int,
-                float,
-            ),
-        ):
-            return int(
-                valeur
-            )
-
-    try:
-        return int(
-            calculer_argent_main(
-                game
-            )
-        )
-    except Exception:
-        return 0
-
-
-def lire_stats() -> dict[str, Any]:
-    if not FICHIER_STATS.exists():
-        return {
-            "parties_terminees_total": 0,
-        }
-
-    try:
-        with FICHIER_STATS.open(
-            "r",
-            encoding="utf-8",
-        ) as fichier:
-            contenu = json.load(
-                fichier
-            )
-
-        if not isinstance(
-            contenu,
-            dict,
-        ):
-            raise ValueError(
-                "stats invalides"
-            )
-
-        return contenu
-
-    except Exception:
-        return {
-            "parties_terminees_total": 0,
-        }
 
 
 def ecrire_json_atomique(
-    chemin: Path,
-    contenu: Any,
+    fichier: Path,
+    contenu: dict[str, Any],
 ) -> None:
-    chemin.parent.mkdir(
-        parents=True,
-        exist_ok=True,
+    temporaire = fichier.with_suffix(
+        fichier.suffix
+        + ".tmp"
     )
 
-    temporaire = chemin.with_suffix(
-        chemin.suffix + ".tmp"
-    )
-
-    with temporaire.open(
-        "w",
-        encoding="utf-8",
-    ) as fichier:
-        json.dump(
-            rendre_json_serialisable(
-                contenu
-            ),
-            fichier,
-            ensure_ascii=False,
+    temporaire.write_text(
+        json.dumps(
+            contenu,
             indent=2,
-        )
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
 
     temporaire.replace(
-        chemin
+        fichier
     )
 
 
-def sauvegarder_stats(
-    stats: dict[str, Any],
+def sauvegarder(
+    game_id: str,
+    historique: dict[str, Any],
 ) -> None:
     ecrire_json_atomique(
-        FICHIER_STATS,
-        stats,
+        chemin_temporaire(
+            game_id
+        ),
+        historique,
     )
 
 
-# ============================================================
-# HISTORIQUE EN MÉMOIRE
-# ============================================================
-
-def demarrer_historique(
-    game_id: str,
-    game: Game | None = None,
-) -> dict[str, Any]:
-    with _verrou_logs:
-
-        historique = _historiques.get(
-            game_id
-        )
-
-        if historique is not None:
-            return historique
-
-        historique = {
-            "game_id": game_id,
-            "debut": maintenant_iso(),
-            "fin": None,
-            "resultat": None,
-            "abandon": False,
-            "raison_abandon": None,
-            "nb_joueurs": (
-                len(game.players)
-                if game is not None
-                else None
-            ),
-            "version_strategie":
-                VERSION_STRATEGIE,
-            "pid_initial": os.getpid(),
-            "situations": [],
-        }
-
-        _historiques[
-            game_id
-        ] = historique
-
-        return historique
-
-
-def obtenir_historique(
+def nouvel_historique(
     game_id: str,
 ) -> dict[str, Any]:
-    with _verrou_logs:
-        return _historiques.setdefault(
+    return {
+        "game_id": game_id,
+
+        "debut": maintenant(),
+        "fin": None,
+
+        "resultat": None,
+
+        "abandon": False,
+        "raison_abandon": None,
+
+        "nb_joueurs": None,
+
+        "situations": [],
+    }
+
+
+def charger_historique(
+    game_id: str,
+) -> dict[str, Any]:
+    fichier = chemin_temporaire(
+        game_id
+    )
+
+    if fichier.exists():
+        try:
+            return json.loads(
+                fichier.read_text(
+                    encoding="utf-8"
+                )
+            )
+
+        except (
+            json.JSONDecodeError,
+            OSError,
+        ):
+            pass
+
+    return nouvel_historique(
+        game_id
+    )
+
+
+def initialiser_historique(
+    game_id: str,
+) -> None:
+    with verrou_log_partie(
+        game_id
+    ):
+        sauvegarder(
             game_id,
-            {
-                "game_id": game_id,
-                "debut": maintenant_iso(),
-                "fin": None,
-                "resultat": None,
-                "abandon": False,
-                "raison_abandon": None,
-                "nb_joueurs": None,
-                "version_strategie":
-                    VERSION_STRATEGIE,
-                "pid_initial":
-                    os.getpid(),
-                "situations": [],
-            },
+            nouvel_historique(
+                game_id
+            ),
         )
 
-
-# ============================================================
-# SITUATION
-# ============================================================
 
 def afficher_situation(
     game: Game,
     game_id: str,
-) -> dict[str, Any]:
-
-    historique = obtenir_historique(
-        game_id
-    )
-
-    try:
-        etat = obtenir_etat(
-            game_id
-        )
-    except Exception:
-        etat = {}
-
+) -> None:
     moi = trouver_mon_joueur(
         game
     )
 
-    scores = extraire_scores(
-        game
+    if moi is None:
+        return
+
+    etat = obtenir_etat(
+        game_id
     )
 
-    if moi is not None:
-        nom_joueur = str(
-            getattr(
-                moi,
-                "name",
-                "???",
-            )
-        )
-
-        score = scores.get(
-            nom_joueur,
-            int(
-                getattr(
-                    moi,
-                    "score",
-                    0,
-                )
-                or 0
-            ),
-        )
-
-        main = extraire_quantites(
-            getattr(
-                moi,
-                "hand",
-                None,
-            )
-        )
-    else:
-        nom_joueur = (
-            historique
-            .get(
-                "situations",
-                [{}],
-            )[-1]
-            .get(
-                "joueur",
-                "???",
-            )
-            if historique.get(
-                "situations"
-            )
-            else "???"
-        )
-
-        score = scores.get(
-            nom_joueur,
-            0,
-        )
-
-        main = {}
-
-    stock_complet = extraire_stock(
-        game
-    )
-
-    stock_base = {
-        nom: stock_complet.get(
-            nom,
-            0,
-        )
-        for nom in (
-            "province",
-            "duchy",
-            "estate",
-            "gold",
-            "silver",
-            "curse",
-        )
+    stock = {
+        carte.value.lower():
+            quantite
+        for carte, quantite
+        in game.stock.quantities.items()
     }
 
-    royaume = royaume_depuis_stock(
-        stock_complet
+    piles_basses = sorted(
+        stock.items(),
+        key=lambda item:
+            item[1],
+    )[:3]
+
+    argent = (
+        calculer_argent_main(
+            game
+        )
+        + etat["bonus_pieces"]
     )
 
+    cartes_basiques = {
+        "province",
+        "duchy",
+        "estate",
+        "gold",
+        "silver",
+        "copper",
+        "curse",
+    }
+
     situation = {
-        "tour": int(
-            etat.get(
-                "tour",
-                0,
-            )
-            or 0
+        "tour":
+            etat["tour"],
+
+        "pid":
+            os.getpid(),
+
+        "partie_finie":
+            game.finished,
+
+        "joueur":
+            moi.name,
+
+        "score":
+            moi.score,
+
+        "scores": {
+            joueur.name:
+                joueur.score
+            for joueur
+            in game.players
+        },
+
+        "main": (
+            {
+                carte.value:
+                    quantite
+                for carte, quantite
+                in moi.hand.quantities.items()
+            }
+            if moi.hand is not None
+            else {}
         ),
-
-        # Diagnostic processus / déploiement
-        "pid": os.getpid(),
-        "version_strategie":
-            VERSION_STRATEGIE,
-
-        "partie_finie": bool(
-            getattr(
-                game,
-                "finished",
-                False,
-            )
-        ),
-
-        "joueur": nom_joueur,
-        "score": score,
-        "scores": scores,
-
-        "main": main,
 
         "argent":
-            obtenir_argent_log(
-                game,
-                etat,
-            ),
+            argent,
 
-        "actions_restantes": int(
-            etat.get(
-                "actions_restantes",
-                etat.get(
-                    "actions",
-                    1,
-                ),
-            )
-            or 0
-        ),
+        "actions_restantes":
+            etat[
+                "actions_restantes"
+            ],
 
-        "achats_restants": int(
-            etat.get(
-                "achats_restants",
-                etat.get(
-                    "achats",
-                    1,
-                ),
-            )
-            or 0
-        ),
+        "achats_restants":
+            etat[
+                "achats_restants"
+            ],
 
         "cartes_achetees":
-            rendre_json_serialisable(
-                etat.get(
-                    "cartes_achetees",
-                    {},
-                )
+            dict(
+                etat[
+                    "cartes_achetees"
+                ]
             ),
 
         "gains_estimes":
-            rendre_json_serialisable(
+            dict(
                 etat.get(
                     "gains_estimes",
                     {},
                 )
             ),
 
-        "stock": stock_base,
-        "royaume": royaume,
+        "stock": {
+            nom:
+                stock.get(
+                    nom,
+                    0,
+                )
+            for nom in (
+                "province",
+                "duchy",
+                "estate",
+                "gold",
+                "silver",
+                "curse",
+            )
+        },
+
+        "royaume": {
+            nom:
+                quantite
+            for nom, quantite
+            in stock.items()
+            if nom
+            not in cartes_basiques
+        },
 
         "piles_vides":
             nombre_piles_vides(
@@ -763,142 +352,181 @@ def afficher_situation(
             ),
 
         "piles_basses":
-            piles_basses_depuis_royaume(
-                royaume
+            piles_basses,
+
+        "strategie":
+            etat.get(
+                "strategie_actuelle"
             ),
+    }
+
+    with verrou_log_partie(
+        game_id
+    ):
+        historique = (
+            charger_historique(
+                game_id
+            )
+        )
+
+        historique[
+            "nb_joueurs"
+        ] = len(
+            game.players
+        )
+
+        situations = historique[
+            "situations"
+        ]
+
+        if (
+            situations
+            and situations[-1].get(
+                "tour"
+            )
+            == etat["tour"]
+        ):
+            precedente = (
+                situations[-1]
+            )
+
+            situation[
+                "decisions"
+            ] = precedente.get(
+                "decisions",
+                [],
+            )
+
+            situation[
+                "evaluations_achats"
+            ] = precedente.get(
+                "evaluations_achats",
+                [],
+            )
+
+            situations[-1] = (
+                situation
+            )
+
+        else:
+            situation[
+                "decisions"
+            ] = []
+
+            situation[
+                "evaluations_achats"
+            ] = []
+
+            situations.append(
+                situation
+            )
+
+        sauvegarder(
+            game_id,
+            historique,
+        )
+
+
+def compacter_evaluation_achat(
+    etat: dict[str, Any],
+    decision: str,
+) -> dict[str, Any]:
+    evaluations = etat.get(
+        "derniere_evaluation_achat",
+        {},
+    )
+
+    nom_choisi = (
+        decision
+        .removeprefix(
+            "BUY "
+        )
+        .strip()
+        .lower()
+    )
+
+    classement = sorted(
+        (
+            (
+                nom,
+                evaluation.get(
+                    "total",
+                    -10000,
+                ),
+            )
+            for nom, evaluation
+            in evaluations.items()
+        ),
+        key=lambda item:
+            item[1],
+        reverse=True,
+    )[:5]
+
+    choisi = evaluations.get(
+        nom_choisi,
+        {},
+    )
+
+    detail_choisi = {
+        cle: valeur
+        for cle, valeur
+        in choisi.items()
+        if cle not in {
+            "scores_strategies",
+            "strategie",
+        }
+    }
+
+    return {
+        "decision":
+            decision,
 
         "strategie":
             etat.get(
                 "strategie_actuelle"
             ),
 
-        "scores_strategies":
-            rendre_json_serialisable(
-                etat.get(
-                    "scores_strategies",
-                    {},
-                )
-            ),
+        "top": {
+            nom:
+                poids
+            for nom, poids
+            in classement
+        },
 
-        "decisions": [],
-        "evaluations_achats": [],
+        "choisi":
+            detail_choisi,
     }
-
-    with _verrou_logs:
-
-        if historique.get(
-            "nb_joueurs"
-        ) is None:
-            historique[
-                "nb_joueurs"
-            ] = len(
-                getattr(
-                    game,
-                    "players",
-                    [],
-                )
-            )
-
-        historique[
-            "situations"
-        ].append(
-            situation
-        )
-
-    return situation
-
-
-# ============================================================
-# ÉVALUATIONS D'ACHAT
-# ============================================================
-
-def compacter_evaluation(
-    evaluation: Any,
-) -> Any:
-
-    if not isinstance(
-        evaluation,
-        dict,
-    ):
-        return rendre_json_serialisable(
-            evaluation
-        )
-
-    # Cas où on reçoit directement :
-    #
-    # {
-    #   "silver": {...},
-    #   "gold": {...},
-    #   ...
-    # }
-    #
-    # On ne conserve que le top 5.
-
-    cartes_evaluees = []
-
-    for nom, details in evaluation.items():
-
-        if not isinstance(
-            details,
-            dict,
-        ):
-            continue
-
-        total = details.get(
-            "total"
-        )
-
-        if not isinstance(
-            total,
-            (
-                int,
-                float,
-            ),
-        ):
-            continue
-
-        cartes_evaluees.append(
-            (
-                str(nom),
-                total,
-                details,
-            )
-        )
-
-    if cartes_evaluees:
-
-        cartes_evaluees.sort(
-            key=lambda item:
-                item[1],
-            reverse=True,
-        )
-
-        top = {
-            nom: total
-            for nom, total, _
-            in cartes_evaluees[:5]
-        }
-
-        return {
-            "top": top,
-        }
-
-    return rendre_json_serialisable(
-        evaluation
-    )
 
 
 def enregistrer_decision(
     game_id: str,
+    tour: int,
     decision: str,
-    evaluation: Any = None,
 ) -> None:
-
-    historique = obtenir_historique(
+    etat = obtenir_etat(
         game_id
     )
 
-    with _verrou_logs:
+    evaluation = None
+
+    if decision.startswith(
+        "BUY "
+    ):
+        evaluation = (
+            compacter_evaluation_achat(
+                etat,
+                decision,
+            )
+        )
+
+    with verrou_log_partie(
+        game_id
+    ):
+        historique = (
+            charger_historique(
+                game_id
+            )
+        )
 
         situations = historique.get(
             "situations",
@@ -908,178 +536,83 @@ def enregistrer_decision(
         if not situations:
             return
 
-        situation = situations[-1]
-
-        situation.setdefault(
-            "decisions",
-            [],
-        ).append(
-            str(decision)
+        situation = (
+            situations[-1]
         )
 
-        if evaluation is None:
+        if (
+            situation.get(
+                "tour"
+            )
+            != tour
+        ):
             return
 
-        evaluation_compacte = (
-            compacter_evaluation(
+        decisions = (
+            situation.setdefault(
+                "decisions",
+                [],
+            )
+        )
+
+        if (
+            not decisions
+            or decisions[-1]
+            != decision
+        ):
+            decisions.append(
+                decision
+            )
+
+        if evaluation is not None:
+            situation.setdefault(
+                "evaluations_achats",
+                [],
+            ).append(
                 evaluation
             )
-        )
 
-        situation.setdefault(
-            "evaluations_achats",
-            [],
-        ).append(
-            evaluation_compacte
+        sauvegarder(
+            game_id,
+            historique,
         )
 
 
-def enregistrer_evaluation_achat(
+def marquer_abandon(
     game_id: str,
-    decision: str,
-    strategie: str | None,
-    evaluations: dict[str, Any],
-    choisi: dict[str, Any] | None = None,
+    raison: str,
 ) -> None:
-    """
-    Variante plus précise si strategy.py fournit déjà
-    toutes les évaluations.
-    """
-
-    historique = obtenir_historique(
+    with verrou_log_partie(
         game_id
-    )
-
-    top = []
-
-    for nom, details in evaluations.items():
-
-        if not isinstance(
-            details,
-            dict,
-        ):
-            continue
-
-        total = details.get(
-            "total"
-        )
-
-        if isinstance(
-            total,
-            (
-                int,
-                float,
-            ),
-        ):
-            top.append(
-                (
-                    str(nom),
-                    total,
-                )
-            )
-
-    top.sort(
-        key=lambda item:
-            item[1],
-        reverse=True,
-    )
-
-    resultat = {
-        "decision": decision,
-        "strategie": strategie,
-        "top": {
-            nom: score
-            for nom, score
-            in top[:5]
-        },
-        "choisi":
-            rendre_json_serialisable(
-                choisi
-            )
-            if choisi is not None
-            else None,
-    }
-
-    with _verrou_logs:
-
-        situations = historique.get(
-            "situations",
-            [],
-        )
-
-        if not situations:
-            return
-
-        situations[-1].setdefault(
-            "evaluations_achats",
-            [],
-        ).append(
-            resultat
-        )
-
-
-# ============================================================
-# RÉSULTAT
-# ============================================================
-
-def elimination_precoce_probable(
-    historique: dict[str, Any],
-) -> bool:
-    """
-    Détecte le cas où le bot a probablement été éliminé
-    immédiatement par Dopynion.
-
-    Typiquement :
-    - une seule situation
-    - tour 1
-    - partie non terminée
-    - scores encore tous identiques
-    """
-
-    situations = historique.get(
-        "situations",
-        [],
-    )
-
-    if len(
-        situations
-    ) != 1:
-        return False
-
-    situation = situations[0]
-
-    if situation.get(
-        "tour"
-    ) != 1:
-        return False
-
-    if situation.get(
-        "partie_finie"
     ):
-        return False
-
-    scores = situation.get(
-        "scores",
-        {},
-    )
-
-    if not scores:
-        return False
-
-    valeurs = list(
-        scores.values()
-    )
-
-    return len(
-        set(
-            valeurs
+        historique = (
+            charger_historique(
+                game_id
+            )
         )
-    ) == 1
+
+        historique[
+            "abandon"
+        ] = True
+
+        historique[
+            "raison_abandon"
+        ] = raison
+
+        sauvegarder(
+            game_id,
+            historique,
+        )
 
 
-def est_victoire_historique(
+def est_abandon(
     historique: dict[str, Any],
 ) -> bool:
+    if historique.get(
+        "abandon",
+        False,
+    ):
+        return True
 
     situations = historique.get(
         "situations",
@@ -1089,100 +622,144 @@ def est_victoire_historique(
     if not situations:
         return False
 
-    situation = situations[-1]
+    derniere = situations[-1]
 
-    scores = situation.get(
+    joueur = derniere.get(
+        "joueur"
+    )
+
+    scores = derniere.get(
         "scores",
         {},
     )
 
-    joueur = situation.get(
+    if joueur not in scores:
+        return False
+
+    return (
+        scores[joueur]
+        <= -10000
+    )
+
+
+def elimination_precoce_probable(
+    historique: dict[str, Any],
+) -> bool:
+    situations = historique.get(
+        "situations",
+        [],
+    )
+
+    if len(situations) != 1:
+        return False
+
+    derniere = situations[0]
+
+    if derniere.get(
+        "tour"
+    ) != 1:
+        return False
+
+    if derniere.get(
+        "partie_finie",
+        False,
+    ):
+        return False
+
+    scores = derniere.get(
+        "scores",
+        {},
+    )
+
+    if not scores:
+        return False
+
+    # Cas typique du kick :
+    # premier tour, partie non finie,
+    # tous les joueurs encore au
+    # score de départ.
+    return (
+        len(
+            set(
+                scores.values()
+            )
+        )
+        == 1
+    )
+
+
+def est_victoire(
+    historique: dict[str, Any],
+) -> bool:
+    situations = historique.get(
+        "situations",
+        [],
+    )
+
+    if not situations:
+        return False
+
+    derniere = situations[-1]
+
+    scores = derniere.get(
+        "scores",
+        {},
+    )
+
+    mon_joueur = derniere.get(
         "joueur"
     )
 
     if (
         not scores
-        or joueur not in scores
+        or mon_joueur
+        not in scores
     ):
         return False
 
-    mon_score = scores[
-        joueur
-    ]
-
-    meilleur_score = max(
-        scores.values()
-    )
-
-    # Une égalité au meilleur score compte
-    # comme victoire.
     return (
-        mon_score
-        == meilleur_score
-    )
-
-
-def est_victoire(
-    game: Game,
-) -> bool:
-
-    moi = trouver_mon_joueur(
-        game
-    )
-
-    joueurs = getattr(
-        game,
-        "players",
-        [],
-    )
-
-    if (
-        moi is None
-        or not joueurs
-    ):
-        return False
-
-    mon_score = int(
-        getattr(
-            moi,
-            "score",
-            0,
+        scores[
+            mon_joueur
+        ]
+        == max(
+            scores.values()
         )
-        or 0
-    )
-
-    meilleur_score = max(
-        int(
-            getattr(
-                joueur,
-                "score",
-                0,
-            )
-            or 0
-        )
-        for joueur
-        in joueurs
-    )
-
-    return (
-        mon_score
-        == meilleur_score
     )
 
 
-# ============================================================
-# SAUVEGARDE PARTIE
-# ============================================================
-
-def nom_fichier_partie(
+def nom_final(
+    historique: dict[str, Any],
     resultat: str,
-    game_id: str,
 ) -> str:
+    try:
+        debut = datetime.fromisoformat(
+            historique["debut"]
+        )
 
-    date = datetime.now().astimezone()
+    except (
+        ValueError,
+        TypeError,
+        KeyError,
+    ):
+        debut = (
+            datetime
+            .now()
+            .astimezone()
+        )
 
-    prefixe = date.strftime(
+    prefixe = debut.strftime(
         "%m%d%H%M"
+    )
+
+    game_id = re.sub(
+        r"[^a-zA-Z0-9_-]",
+        "_",
+        str(
+            historique.get(
+                "game_id",
+                "unknown",
+            )
+        ),
     )
 
     return (
@@ -1192,384 +769,238 @@ def nom_fichier_partie(
     )
 
 
-def terminer_historique(
-    game_id: str,
-    game: Game | None = None,
-    abandon: bool = False,
-    raison_abandon: str | None = None,
-) -> Path:
-
-    with _verrou_logs:
-
-        historique = obtenir_historique(
-            game_id
-        )
-
-        historique[
-            "fin"
-        ] = maintenant_iso()
-
-        historique[
-            "abandon"
-        ] = bool(
-            abandon
-        )
-
-        historique[
-            "raison_abandon"
-        ] = raison_abandon
-
-        # ----------------------------------------------------
-        # FORFAIT / ABANDON
-        # ----------------------------------------------------
-
-        if abandon:
-            resultat = "F"
-
-        # ----------------------------------------------------
-        # ÉLIMINATION PRÉCOCE / COMMANDE INVALIDE
-        # ----------------------------------------------------
-
-        elif elimination_precoce_probable(
-            historique
-        ):
-            resultat = "F"
-
-            historique[
-                "abandon"
-            ] = True
-
-            if not historique.get(
-                "raison_abandon"
-            ):
-                historique[
-                    "raison_abandon"
-                ] = (
-                    "elimination_precoce"
-                )
-
-        # ----------------------------------------------------
-        # RÉSULTAT NORMAL
-        # ----------------------------------------------------
-
-        else:
-
-            victoire = False
-
-            if game is not None:
-                try:
-                    victoire = est_victoire(
-                        game
-                    )
-                except Exception:
-                    victoire = (
-                        est_victoire_historique(
-                            historique
-                        )
-                    )
-            else:
-                victoire = (
-                    est_victoire_historique(
-                        historique
-                    )
-                )
-
-            resultat = (
-                "V"
-                if victoire
-                else "D"
-            )
-
-        historique[
-            "resultat"
-        ] = resultat
-
-        historique[
-            "pid_final"
-        ] = os.getpid()
-
-        nom_fichier = nom_fichier_partie(
-            resultat,
-            game_id,
-        )
-
-        chemin = (
-            DOSSIER_LOGS
-            / nom_fichier
-        )
-
-        ecrire_json_atomique(
-            chemin,
-            historique,
-        )
-
-        print(
-            "[LOGGER SAVE]",
-            {
-                "game_id":
-                    game_id,
-                "resultat":
-                    resultat,
-                "fichier":
-                    str(
-                        chemin
-                    ),
-                "pid":
-                    os.getpid(),
-                "version":
-                    VERSION_STRATEGIE,
-            },
-            flush=True,
-        )
-
-        _historiques.pop(
-            game_id,
-            None,
-        )
-
-        stats = lire_stats()
-
-        stats[
-            "parties_terminees_total"
-        ] = (
-            int(
-                stats.get(
-                    "parties_terminees_total",
-                    0,
-                )
-            )
-            + 1
-        )
-
-        stats[
-            "derniere_partie"
-        ] = nom_fichier
-
-        stats[
-            "derniere_mise_a_jour"
-        ] = maintenant_iso()
-
-        sauvegarder_stats(
-            stats
-        )
-
-        nettoyer_anciens_logs()
-
-        total = stats[
-            "parties_terminees_total"
-        ]
-
-        if (
-            total
-            % TAILLE_RESUME
-            == 0
-        ):
-            generer_resume(
-                total
-            )
-
-        return chemin
-
-
-# ============================================================
-# ABANDON EXPLICITE
-# ============================================================
-
-def terminer_historique_abandon(
-    game_id: str,
-    raison: str,
-    game: Game | None = None,
-) -> Path:
-
-    return terminer_historique(
-        game_id=game_id,
-        game=game,
-        abandon=True,
-        raison_abandon=raison,
+def fichiers_logs_finalises(
+) -> list[Path]:
+    motif = re.compile(
+        r"^\d{8}[VDF]_.+\.json$"
     )
 
-
-# ============================================================
-# LECTURE DES LOGS
-# ============================================================
-
-REGEX_LOG_PARTIE = re.compile(
-    r"^\d{8}[VDF]_.+\.json$"
-)
-
-
-def lister_logs_parties() -> list[Path]:
-
-    fichiers = []
-
-    for chemin in (
-        DOSSIER_LOGS
-        .glob(
+    fichiers = [
+        fichier
+        for fichier
+        in DOSSIER_LOGS.glob(
             "*.json"
         )
-    ):
-        if REGEX_LOG_PARTIE.match(
-            chemin.name
-        ):
-            fichiers.append(
-                chemin
-            )
+        if motif.match(
+            fichier.name
+        )
+    ]
 
     fichiers.sort(
-        key=lambda chemin:
-            chemin.stat().st_mtime
+        key=lambda fichier:
+            fichier.stat().st_mtime,
+        reverse=True,
     )
 
     return fichiers
 
 
-def lire_log(
-    chemin: Path,
+def nettoyer_anciens_logs(
+) -> None:
+    with _verrou_resume:
+        fichiers = (
+            fichiers_logs_finalises()
+        )
+
+        if (
+            len(fichiers)
+            <= MAX_PARTIES_LOGS
+        ):
+            return
+
+        for fichier in fichiers[
+            MAX_PARTIES_LOGS:
+        ]:
+            try:
+                fichier.unlink()
+
+            except FileNotFoundError:
+                pass
+
+
+def stats_vides(
+) -> dict[str, Any]:
+    return {
+        "parties_terminees": 0,
+        "parties_depuis_resume": 0,
+        "dernier_resume": 0,
+        "logs_recents": [],
+    }
+
+
+def reconstruire_stats(
+    exclure_nom: str | None = None,
+) -> dict[str, Any]:
+    fichiers = [
+        fichier
+        for fichier
+        in fichiers_logs_finalises()
+        if fichier.name
+        != exclure_nom
+    ]
+
+    chronologiques = list(
+        reversed(
+            fichiers[
+                :MAX_PARTIES_LOGS
+            ]
+        )
+    )
+
+    total = len(
+        fichiers
+    )
+
+    return {
+        "parties_terminees":
+            total,
+
+        "parties_depuis_resume":
+            total
+            % TAILLE_RESUME,
+
+        "dernier_resume":
+            (
+                total
+                // TAILLE_RESUME
+            )
+            * TAILLE_RESUME,
+
+        "logs_recents": [
+            fichier.name
+            for fichier
+            in chronologiques
+        ],
+    }
+
+
+def charger_stats(
 ) -> dict[str, Any] | None:
+    if not FICHIER_STATS.exists():
+        return None
 
     try:
-        with chemin.open(
-            "r",
-            encoding="utf-8",
-        ) as fichier:
-            contenu = json.load(
-                fichier
+        stats = json.loads(
+            FICHIER_STATS.read_text(
+                encoding="utf-8"
+            )
+        )
+
+    except (
+        json.JSONDecodeError,
+        OSError,
+    ):
+        return None
+
+    stats.setdefault(
+        "parties_terminees",
+        0,
+    )
+
+    stats.setdefault(
+        "dernier_resume",
+        0,
+    )
+
+    stats.setdefault(
+        "logs_recents",
+        [],
+    )
+
+    stats.setdefault(
+        "parties_depuis_resume",
+        (
+            stats[
+                "parties_terminees"
+            ]
+            % TAILLE_RESUME
+        ),
+    )
+
+    return stats
+
+
+def charger_logs_par_noms(
+    noms: list[str],
+) -> list[dict[str, Any]]:
+    resultats = []
+
+    for nom in noms:
+        fichier = (
+            DOSSIER_LOGS
+            / nom
+        )
+
+        if not fichier.exists():
+            continue
+
+        try:
+            historique = json.loads(
+                fichier.read_text(
+                    encoding="utf-8"
+                )
             )
 
-        if isinstance(
-            contenu,
-            dict,
+        except (
+            json.JSONDecodeError,
+            OSError,
         ):
-            return contenu
+            continue
 
-    except Exception as exc:
-        print(
-            "[LOGGER WARNING]",
-            "Impossible de lire",
-            chemin,
-            repr(exc),
-            flush=True,
+        if historique.get(
+            "resultat"
+        ) not in {
+            "V",
+            "D",
+            "F",
+        }:
+            continue
+
+        resultats.append(
+            historique
         )
+
+    return resultats
+
+
+def strategie_log(
+    historique: dict[str, Any],
+) -> str | None:
+    for situation in reversed(
+        historique.get(
+            "situations",
+            [],
+        )
+    ):
+        evaluations = (
+            situation.get(
+                "evaluations_achats",
+                [],
+            )
+        )
+
+        for evaluation in reversed(
+            evaluations
+        ):
+            strategie = (
+                evaluation.get(
+                    "strategie"
+                )
+            )
+
+            if strategie:
+                return strategie
 
     return None
 
 
-# ============================================================
-# NETTOYAGE
-# ============================================================
-
-def nettoyer_anciens_logs() -> None:
-
-    fichiers = lister_logs_parties()
-
-    if len(
-        fichiers
-    ) <= MAX_LOGS:
-        return
-
-    nombre_a_supprimer = (
-        len(fichiers)
-        - MAX_LOGS
-    )
-
-    for chemin in fichiers[
-        :nombre_a_supprimer
-    ]:
-        try:
-            chemin.unlink()
-        except OSError:
-            pass
-
-
-# ============================================================
-# RÉSUMÉ
-# ============================================================
-
-def win_rate(
-    victoires: int,
-    defaites: int,
-) -> float:
-
-    total = (
-        victoires
-        + defaites
-    )
-
-    if total <= 0:
-        return 0.0
-
-    return round(
-        victoires
-        / total
-        * 100,
-        1,
-    )
-
-
-def valeur_finale(
-    historique: dict[str, Any],
-    cle: str,
-    defaut: Any = None,
-) -> Any:
-
-    situations = historique.get(
-        "situations",
-        [],
-    )
-
-    if not situations:
-        return defaut
-
-    return situations[-1].get(
-        cle,
-        defaut,
-    )
-
-
-def nombre_actions_achetees_log(
-    historique: dict[str, Any],
-) -> int:
-
-    cartes = valeur_finale(
-        historique,
-        "cartes_achetees",
-        {},
-    )
-
-    if not isinstance(
-        cartes,
-        dict,
-    ):
-        return 0
-
-    cartes_non_actions = {
-        "copper",
-        "silver",
-        "gold",
-        "estate",
-        "duchy",
-        "province",
-        "gardens",
-        "curse",
-    }
-
-    return sum(
-        int(qte)
-        for nom, qte
-        in cartes.items()
-        if (
-            str(nom).lower()
-            not in cartes_non_actions
-        )
-    )
-
-
 def moyenne(
-    valeurs: list[float],
-) -> float:
-
+    valeurs: list[
+        int | float
+    ],
+) -> float | None:
     if not valeurs:
-        return 0.0
+        return None
 
     return round(
         sum(valeurs)
@@ -1579,46 +1010,12 @@ def moyenne(
 
 
 def generer_resume(
-    total_parties: int | None = None,
-) -> Path | None:
-
-    fichiers = lister_logs_parties()
-
-    if not fichiers:
-        return None
-
-    fichiers_fenetre = fichiers[
-        -TAILLE_RESUME:
-    ]
-
-    logs = []
-
-    for chemin in fichiers_fenetre:
-
-        contenu = lire_log(
-            chemin
-        )
-
-        if contenu is not None:
-            logs.append(
-                (
-                    chemin,
-                    contenu,
-                )
-            )
-
-    if not logs:
-        return None
-
-    if total_parties is None:
-        stats = lire_stats()
-
-        total_parties = int(
-            stats.get(
-                "parties_terminees_total",
-                len(logs),
-            )
-        )
+    total_parties: int,
+    noms_logs: list[str],
+) -> dict[str, Any]:
+    logs = charger_logs_par_noms(
+        noms_logs
+    )
 
     resultats = {
         "V": 0,
@@ -1626,21 +1023,14 @@ def generer_resume(
         "F": 0,
     }
 
-    par_nombre_joueurs: dict[
-        str,
-        dict[str, Any]
-    ] = {}
-
-    strategies: dict[
-        str,
-        int
-    ] = {}
+    par_joueurs = {}
+    strategies = {}
 
     tours = []
     scores = []
-    actions_achetees = []
+    actions = []
 
-    valeurs_cartes = {
+    achats = {
         "gold": [],
         "silver": [],
         "province": [],
@@ -1653,51 +1043,43 @@ def generer_resume(
         "laboratory": [],
     }
 
-    for _, historique in logs:
-
+    for historique in logs:
         resultat = historique.get(
             "resultat"
         )
 
-        if resultat not in (
-            "V",
-            "D",
-            "F",
-        ):
-            continue
-
-        resultats[
-            resultat
-        ] += 1
+        if resultat in resultats:
+            resultats[
+                resultat
+            ] += 1
 
         nb_joueurs = historique.get(
             "nb_joueurs"
         )
 
-        cle_nb = str(
-            nb_joueurs
-        )
+        if nb_joueurs is not None:
+            cle = str(
+                nb_joueurs
+            )
 
-        if cle_nb not in (
-            par_nombre_joueurs
-        ):
-            par_nombre_joueurs[
-                cle_nb
-            ] = {
-                "V": 0,
-                "D": 0,
-                "F": 0,
-                "win_rate": 0.0,
-            }
+            stats_joueurs = (
+                par_joueurs.setdefault(
+                    cle,
+                    {
+                        "V": 0,
+                        "D": 0,
+                        "F": 0,
+                    },
+                )
+            )
 
-        par_nombre_joueurs[
-            cle_nb
-        ][
-            resultat
-        ] += 1
+            if resultat in stats_joueurs:
+                stats_joueurs[
+                    resultat
+                ] += 1
 
-        # Les statistiques stratégiques ne doivent
-        # pas être polluées par les forfaits.
+        # Les F ne sont pas utilisés
+        # pour évaluer la stratégie.
         if resultat == "F":
             continue
 
@@ -1709,70 +1091,68 @@ def generer_resume(
         if not situations:
             continue
 
-        derniere = situations[-1]
-
-        tour_final = derniere.get(
-            "tour",
-            0,
+        derniere = (
+            situations[-1]
         )
 
-        score_final = derniere.get(
-            "score",
-            0,
+        tour = derniere.get(
+            "tour"
         )
 
-        tours.append(
-            float(
-                tour_final
-                or 0
+        if isinstance(
+            tour,
+            int,
+        ):
+            tours.append(
+                tour
             )
+
+        score = derniere.get(
+            "score"
         )
 
-        scores.append(
-            float(
-                score_final
-                or 0
+        if isinstance(
+            score,
+            (
+                int,
+                float,
+            ),
+        ):
+            scores.append(
+                score
             )
+
+        cartes = derniere.get(
+            "cartes_achetees",
+            {},
         )
 
-        actions_achetees.append(
-            float(
-                nombre_actions_achetees_log(
-                    historique
+        nb_actions = sum(
+            cartes.get(
+                nom,
+                0,
+            )
+            for nom
+            in EFFETS_ACTIONS
+        )
+
+        actions.append(
+            nb_actions
+        )
+
+        for nom in achats:
+            achats[nom].append(
+                cartes.get(
+                    nom,
+                    0,
                 )
             )
-        )
 
-        cartes_achetees = (
-            derniere.get(
-                "cartes_achetees",
-                {},
-            )
-            or {}
-        )
-
-        for nom in valeurs_cartes:
-            valeurs_cartes[
-                nom
-            ].append(
-                float(
-                    cartes_achetees.get(
-                        nom,
-                        0,
-                    )
-                    or 0
-                )
-            )
-
-        strategie = derniere.get(
-            "strategie"
+        strategie = strategie_log(
+            historique
         )
 
         if strategie:
-            strategie = str(
-                strategie
-            )
-
             strategies[
                 strategie
             ] = (
@@ -1783,62 +1163,42 @@ def generer_resume(
                 + 1
             )
 
-    for donnees in (
-        par_nombre_joueurs
-        .values()
+    v = resultats["V"]
+    d = resultats["D"]
+
+    win_rate = (
+        round(
+            v
+            / (v + d)
+            * 100,
+            1,
+        )
+        if v + d > 0
+        else None
+    )
+
+    for stats in (
+        par_joueurs.values()
     ):
-        donnees[
+        vj = stats["V"]
+        dj = stats["D"]
+
+        stats[
             "win_rate"
-        ] = win_rate(
-            donnees["V"],
-            donnees["D"],
+        ] = (
+            round(
+                vj
+                / (vj + dj)
+                * 100,
+                1,
+            )
+            if vj + dj > 0
+            else None
         )
 
-    resultats[
-        "win_rate"
-    ] = win_rate(
-        resultats["V"],
-        resultats["D"],
-    )
-
-    moyennes = {
-        "tour_final":
-            moyenne(
-                tours
-            ),
-
-        "score":
-            moyenne(
-                scores
-            ),
-
-        "actions_achetees":
-            moyenne(
-                actions_achetees
-            ),
-    }
-
-    for nom, valeurs in (
-        valeurs_cartes.items()
-    ):
-        moyennes[
-            nom
-        ] = moyenne(
-            valeurs
-        )
-
-    strategies_triees = dict(
-        sorted(
-            strategies.items(),
-            key=lambda item:
-                item[1],
-            reverse=True,
-        )
-    )
-
-    resume = {
+    return {
         "genere_le":
-            maintenant_iso(),
+            maintenant(),
 
         "parties_terminees_total":
             total_parties,
@@ -1848,130 +1208,260 @@ def generer_resume(
 
         "plage": {
             "premier_log":
-                logs[0][0].name,
+                noms_logs[0]
+                if noms_logs
+                else None,
 
             "dernier_log":
-                logs[-1][0].name,
+                noms_logs[-1]
+                if noms_logs
+                else None,
         },
 
-        "resultats":
-            resultats,
+        "resultats": {
+            **resultats,
+            "win_rate":
+                win_rate,
+        },
 
         "par_nombre_joueurs":
-            par_nombre_joueurs,
+            par_joueurs,
 
-        "moyennes":
-            moyennes,
+        "moyennes": {
+            "tour_final":
+                moyenne(tours),
+
+            "score":
+                moyenne(scores),
+
+            "actions_achetees":
+                moyenne(actions),
+
+            **{
+                nom:
+                    moyenne(
+                        valeurs
+                    )
+                for nom, valeurs
+                in achats.items()
+            },
+        },
 
         "strategies":
-            strategies_triees,
+            dict(
+                sorted(
+                    strategies.items(),
+                    key=lambda item:
+                        item[1],
+                    reverse=True,
+                )
+            ),
 
         "programme": {
             "parties_actives":
                 len(
-                    _historiques
+                    list(
+                        DOSSIER_LOGS.glob(
+                            "game_*.json"
+                        )
+                    )
                 ),
 
             "logs_conserves_max":
-                MAX_LOGS,
+                MAX_PARTIES_LOGS,
 
             "taille_resume":
                 TAILLE_RESUME,
 
             "dossier_resumes":
-                str(
-                    DOSSIER_RESUMES
-                    .relative_to(
-                        BASE_DIR
-                    )
-                ),
-
-            "pid":
-                os.getpid(),
-
-            "version_strategie":
-                VERSION_STRATEGIE,
+                "logs/resumes",
         },
     }
 
-    nom_resume = (
-        f"resume_"
-        f"{TAILLE_RESUME:06d}"
-        f".json"
-    )
 
-    chemin_resume = (
-        DOSSIER_RESUMES
-        / nom_resume
-    )
+def enregistrer_partie_terminee(
+    nom_fichier: str,
+) -> None:
+    with _verrou_resume:
+        stats = charger_stats()
 
-    ecrire_json_atomique(
-        chemin_resume,
-        resume,
-    )
+        if stats is None:
+            # Le fichier final vient déjà
+            # d'être créé : on l'exclut
+            # pendant la reconstruction
+            # pour éviter un double comptage.
+            stats = reconstruire_stats(
+                exclure_nom=nom_fichier,
+            )
 
-    print(
-        "[LOGGER RESUME]",
-        {
-            "fichier":
-                str(
-                    chemin_resume
-                ),
-            "total":
-                total_parties,
-            "fenetre":
-                len(logs),
-            "win_rate":
-                resultats[
-                    "win_rate"
-                ],
-        },
-        flush=True,
-    )
+        stats[
+            "parties_terminees"
+        ] += 1
 
-    return chemin_resume
+        stats[
+            "parties_depuis_resume"
+        ] += 1
 
+        total = stats[
+            "parties_terminees"
+        ]
 
-# ============================================================
-# DEBUG
-# ============================================================
+        logs_recents = stats[
+            "logs_recents"
+        ]
 
-def infos_logger() -> dict[str, Any]:
-    """
-    Pratique pour afficher rapidement l'état du logger
-    depuis un shell ou un endpoint temporaire.
-    """
+        logs_recents.append(
+            nom_fichier
+        )
 
-    return {
-        "pid": os.getpid(),
-        "cwd": os.getcwd(),
-        "base_dir":
-            str(
-                BASE_DIR
-            ),
-        "dossier_logs":
-            str(
-                DOSSIER_LOGS
-            ),
-        "dossier_resumes":
-            str(
+        if (
+            len(logs_recents)
+            > MAX_PARTIES_LOGS
+        ):
+            del logs_recents[
+                :-MAX_PARTIES_LOGS
+            ]
+
+        if (
+            stats[
+                "parties_depuis_resume"
+            ]
+            >= TAILLE_RESUME
+            and len(
+                logs_recents
+            )
+            >= TAILLE_RESUME
+        ):
+            derniers_100 = (
+                logs_recents[
+                    -TAILLE_RESUME:
+                ]
+            )
+
+            resume = generer_resume(
+                total,
+                derniers_100,
+            )
+
+            fichier_resume = (
                 DOSSIER_RESUMES
-            ),
-        "writable":
-            os.access(
-                DOSSIER_LOGS,
-                os.W_OK,
-            ),
-        "version_strategie":
-            VERSION_STRATEGIE,
-        "parties_actives":
-            len(
-                _historiques
-            ),
-        "nombre_logs":
-            len(
-                lister_logs_parties()
-            ),
-        "stats":
-            lire_stats(),
-    }
+                / (
+                    f"resume_"
+                    f"{total:06d}"
+                    f".json"
+                )
+            )
+
+            ecrire_json_atomique(
+                fichier_resume,
+                resume,
+            )
+
+            stats[
+                "dernier_resume"
+            ] = total
+
+            stats[
+                "parties_depuis_resume"
+            ] = 0
+
+            print(
+                f">>> Résumé créé : "
+                f"{fichier_resume.name}",
+                flush=True,
+            )
+
+        ecrire_json_atomique(
+            FICHIER_STATS,
+            stats,
+        )
+
+
+def terminer_historique(
+    game_id: str,
+) -> None:
+    final = None
+
+    with verrou_log_partie(
+        game_id
+    ):
+        temporaire = (
+            chemin_temporaire(
+                game_id
+            )
+        )
+
+        if not temporaire.exists():
+            return
+
+        historique = (
+            charger_historique(
+                game_id
+            )
+        )
+
+        if est_abandon(
+            historique
+        ):
+            resultat = "F"
+
+        elif elimination_precoce_probable(
+            historique
+        ):
+            resultat = "F"
+
+            historique[
+                "abandon"
+            ] = True
+
+            historique[
+                "raison_abandon"
+            ] = (
+                "elimination_precoce"
+            )
+
+        elif est_victoire(
+            historique
+        ):
+            resultat = "V"
+
+        else:
+            resultat = "D"
+
+        historique[
+            "fin"
+        ] = maintenant()
+
+        historique[
+            "resultat"
+        ] = resultat
+
+        final = (
+            DOSSIER_LOGS
+            / nom_final(
+                historique,
+                resultat,
+            )
+        )
+
+        ecrire_json_atomique(
+            final,
+            historique,
+        )
+
+        temporaire.unlink(
+            missing_ok=True
+        )
+
+    if final is not None:
+        enregistrer_partie_terminee(
+            final.name
+        )
+
+        nettoyer_anciens_logs()
+
+        print(
+            f">>> Log final : "
+            f"{final.name}",
+            flush=True,
+        )
