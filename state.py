@@ -49,7 +49,28 @@ def nouvel_etat_partie() -> dict[str, Any]:
         "gains_estimes": {},
 
         "strategie_actuelle": None,
-        "scores_strategies": {},
+
+        # Plan de partie (voir plans.py)
+        "plan_initial": None,
+        "changement_plan": None,
+        "plan_verifie_tour": 0,
+
+        # Suivi de la partie (voir deck.py)
+        # Piles présentes au premier /play :
+        # Dopynion retire les piles vides de
+        # la réserve envoyée.
+        "piles_initiales": None,
+        # Cartes sorties de notre deck
+        # (Hireling jouée).
+        "cartes_retirees": {},
+        # Déduit de notre score exact.
+        "curses_recues": 0,
+        "deck_coherent": True,
+        # Dernières valeurs vues, pour les
+        # callbacks sans état de partie
+        # (Chancellor).
+        "provinces_restantes": None,
+        "nb_joueurs": None,
         "derniere_evaluation_achat": {},
     }
 
@@ -141,53 +162,59 @@ def enregistrer_gain_estime(
         )
 
 
-def nombre_gain_estime(
+def quantite_achetee(
     game_id: str,
     nom_carte: str,
 ) -> int:
-    with verrou_partie(game_id):
-        return obtenir_etat(
-            game_id
-        ).get(
-            "gains_estimes",
-            {},
-        ).get(
-            nom_carte,
-            0,
-        )
+    return obtenir_etat(
+        game_id
+    )["cartes_achetees"].get(
+        nom_carte,
+        0,
+    )
 
 
-def nombre_carte_achetee(
+def quantite_gain_estime(
     game_id: str,
     nom_carte: str,
 ) -> int:
-    with verrou_partie(game_id):
-        return obtenir_etat(
-            game_id
-        )["cartes_achetees"].get(
+    return obtenir_etat(
+        game_id
+    )["gains_estimes"].get(
+        nom_carte,
+        0,
+    )
+
+
+def quantite_economique(
+    game_id: str,
+    nom_carte: str,
+) -> int:
+    # Achetées + gagnées par nos actions
+    # (Bandit -> Gold, Bureaucrat -> Silver).
+    return (
+        quantite_achetee(
+            game_id,
             nom_carte,
-            0,
         )
+        + quantite_gain_estime(
+            game_id,
+            nom_carte,
+        )
+    )
 
 
-def nombre_total_actions_achetees(
+def nombre_total_actions(
     game_id: str,
 ) -> int:
-    with verrou_partie(game_id):
-        etat = obtenir_etat(
-            game_id
+    return sum(
+        quantite_achetee(
+            game_id,
+            nom,
         )
-
-        return sum(
-            etat[
-                "cartes_achetees"
-            ].get(
-                nom,
-                0,
-            )
-            for nom
-            in EFFETS_ACTIONS
-        )
+        for nom
+        in EFFETS_ACTIONS
+    )
 
 
 def supprimer_partie(

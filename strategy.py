@@ -12,16 +12,18 @@ from config import (
     PRIORITE_ACTION,
     PRIORITE_DEPARTAGE,
 )
+from deck import enregistrer_carte_retiree
 from game_utils import (
     calculer_argent_main,
     quantite_stock,
     trouver_mon_joueur,
 )
+from plans import plan_actuel
 from state import (
     enregistrer_gain_estime,
-    nombre_carte_achetee,
-    nombre_total_actions_achetees,
+    nombre_total_actions,
     obtenir_etat,
+    quantite_achetee,
 )
 from weights import (
     calculer_poids_achat,
@@ -59,8 +61,7 @@ def choisir_action(
         ):
             if (
                 quantite > 0
-                and carte.value.lower()
-                == nom
+                and carte == nom
                 and Card.class_(
                     carte
                 ).is_action
@@ -79,7 +80,7 @@ def appliquer_effet_action(
         game_id
     )
 
-    nom = carte.value.lower()
+    nom = str(carte)
 
     effet = EFFETS_ACTIONS.get(
         nom,
@@ -103,6 +104,14 @@ def appliquer_effet_action(
     etat[
         "bonus_pieces"
     ] += effet["pieces"]
+
+    # Dans Dopynion, une Hireling jouée
+    # quitte définitivement le deck.
+    if nom == "hireling":
+        enregistrer_carte_retiree(
+            game_id,
+            nom,
+        )
 
     for nom_gain, quantite in (
         GAINS_ACTIONS.get(
@@ -167,7 +176,7 @@ def carte_action_autorisee(
         return False
 
     if (
-        nombre_carte_achetee(
+        quantite_achetee(
             game_id,
             nom,
         )
@@ -176,7 +185,7 @@ def carte_action_autorisee(
         return False
 
     return (
-        nombre_total_actions_achetees(
+        nombre_total_actions(
             game_id
         )
         < max_total_actions_dynamique(
@@ -216,6 +225,7 @@ def choisir_achat(
 
     candidats = []
     evaluations = {}
+    strategie = None
 
     for carte, quantite in (
         game.stock.quantities.items()
@@ -223,7 +233,7 @@ def choisir_achat(
         if quantite <= 0:
             continue
 
-        nom = carte.value.lower()
+        nom = str(carte)
 
         if nom in interdits:
             continue
@@ -237,6 +247,14 @@ def choisir_achat(
             > etat["argent_restant"]
         ):
             continue
+
+        # Plan calculé une seule fois,
+        # dès qu'une carte est achetable.
+        if strategie is None:
+            strategie = plan_actuel(
+                game,
+                game_id,
+            )
 
         if (
             classe.is_action
@@ -253,6 +271,7 @@ def choisir_achat(
                 game,
                 game_id,
                 nom,
+                strategie,
             )
         )
 
@@ -271,28 +290,11 @@ def choisir_achat(
             )
         )
 
+    # Le plan (etat["strategie_actuelle"])
+    # est tenu à jour par plan_actuel().
     etat[
         "derniere_evaluation_achat"
     ] = evaluations
-
-    if evaluations:
-        premiere = next(
-            iter(
-                evaluations.values()
-            )
-        )
-
-        etat[
-            "strategie_actuelle"
-        ] = premiere[
-            "strategie"
-        ]
-
-        etat[
-            "scores_strategies"
-        ] = premiere[
-            "scores_strategies"
-        ]
 
     if not candidats:
         return None

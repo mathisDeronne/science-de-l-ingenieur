@@ -2,6 +2,7 @@ import json
 import os
 import re
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -58,6 +59,37 @@ _verrou_registre_logs = (
 
 _verrou_resume = (
     threading.RLock()
+)
+
+
+# Historiques des parties en cours,
+# gardés en mémoire.
+#
+# Le serveur tourne dans un seul
+# processus (fastapi run sans
+# --workers) : la mémoire est donc
+# partagée par toutes les parties.
+#
+# Le disque ne sert plus que de
+# sauvegarde : une écriture par tour
+# au lieu de deux lectures/écritures
+# complètes à chaque /play.
+_historiques: dict[
+    str,
+    dict[str, Any],
+] = {}
+
+_derniere_activite: dict[
+    str,
+    float,
+] = {}
+
+# Une partie sans /end_game depuis
+# plus longtemps que ça est oubliée
+# de la mémoire (sa sauvegarde du
+# dernier tour reste sur le disque).
+DUREE_MAX_PARTIE_INACTIVE = (
+    3 * 60 * 60
 )
 
 
@@ -122,18 +154,34 @@ def chemin_temporaire(
 def ecrire_json_atomique(
     fichier: Path,
     contenu: dict[str, Any],
+    compact: bool = False,
 ) -> None:
     temporaire = fichier.with_suffix(
         fichier.suffix
         + ".tmp"
     )
 
-    temporaire.write_text(
-        json.dumps(
+    # Sauvegardes intermédiaires :
+    # JSON compact (plus rapide,
+    # plus petit).
+    # Fichiers finaux : indentés,
+    # pour être lus par des humains.
+    if compact:
+        texte = json.dumps(
+            contenu,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
+    else:
+        texte = json.dumps(
             contenu,
             indent=2,
             ensure_ascii=False,
-        ),
+        )
+
+    temporaire.write_text(
+        texte,
         encoding="utf-8",
     )
 
@@ -151,7 +199,50 @@ def sauvegarder(
             game_id
         ),
         historique,
+        compact=True,
     )
+
+
+def oublier_partie(
+    game_id: str,
+) -> None:
+    _historiques.pop(
+        game_id,
+        None,
+    )
+
+    _derniere_activite.pop(
+        game_id,
+        None,
+    )
+
+
+def purger_parties_inactives(
+) -> None:
+    limite = (
+        time.monotonic()
+        - DUREE_MAX_PARTIE_INACTIVE
+    )
+
+    with _verrou_registre_logs:
+        inactives = [
+            game_id
+            for game_id, activite
+            in list(
+                _derniere_activite.items()
+            )
+            if activite < limite
+        ]
+
+        for game_id in inactives:
+            oublier_partie(
+                game_id
+            )
+
+            _verrous_logs_parties.pop(
+                game_id,
+                None,
+            )
 
 
 def nouvel_historique(
@@ -170,11 +261,80 @@ def nouvel_historique(
 
         "nb_joueurs": None,
 
+        # Rempli par /end_game :
+        # voir estimer_resultat.
+        "fin_partie": None,
+
+        # Exceptions rattrapées dans
+        # /play (le bot a passé son
+        # tour à la place).
+        "erreurs": [],
+
         "situations": [],
     }
 
 
-def charger_historique(
+MAX_ERREURS_PAR_PARTIE = 20
+
+
+def enregistrer_erreur(
+    game_id: str,
+    tour: Any,
+    trace: str,
+) -> None:
+    """
+    Appelé par le filet de sécurité de
+    /play. Ne doit JAMAIS lever
+    d'exception lui-même.
+    """
+
+    try:
+        print(
+            f"!!! ERREUR /play "
+            f"partie {game_id} "
+            f"tour {tour} :\n"
+            f"{trace}",
+            flush=True,
+        )
+
+        with verrou_log_partie(
+            game_id
+        ):
+            historique = (
+                charger_historique(
+                    game_id
+                )
+            )
+
+            erreurs = historique.setdefault(
+                "erreurs",
+                [],
+            )
+
+            if (
+                len(erreurs)
+                < MAX_ERREURS_PAR_PARTIE
+            ):
+                erreurs.append(
+                    {
+                        "tour": tour,
+                        "heure": maintenant(),
+                        "trace": trace[
+                            -2000:
+                        ],
+                    }
+                )
+
+            sauvegarder(
+                game_id,
+                historique,
+            )
+
+    except Exception:
+        pass
+
+
+def lire_historique_disque(
     game_id: str,
 ) -> dict[str, Any]:
     fichier = chemin_temporaire(
@@ -200,17 +360,61 @@ def charger_historique(
     )
 
 
+def charger_historique(
+    game_id: str,
+) -> dict[str, Any]:
+    # À appeler sous
+    # verrou_log_partie(game_id).
+    historique = _historiques.get(
+        game_id
+    )
+
+    if historique is None:
+        # Pas en mémoire : partie
+        # commencée avant un
+        # redémarrage du serveur.
+        # On repart de la sauvegarde
+        # disque si elle existe.
+        historique = (
+            lire_historique_disque(
+                game_id
+            )
+        )
+
+        _historiques[
+            game_id
+        ] = historique
+
+    _derniere_activite[
+        game_id
+    ] = time.monotonic()
+
+    return historique
+
+
 def initialiser_historique(
     game_id: str,
 ) -> None:
+    purger_parties_inactives()
+
     with verrou_log_partie(
         game_id
     ):
+        historique = nouvel_historique(
+            game_id
+        )
+
+        _historiques[
+            game_id
+        ] = historique
+
+        _derniere_activite[
+            game_id
+        ] = time.monotonic()
+
         sauvegarder(
             game_id,
-            nouvel_historique(
-                game_id
-            ),
+            historique,
         )
 
 
@@ -230,7 +434,7 @@ def afficher_situation(
     )
 
     stock = {
-        carte.value.lower():
+        str(carte):
             quantite
         for carte, quantite
         in game.stock.quantities.items()
@@ -348,7 +552,30 @@ def afficher_situation(
 
         "piles_vides":
             nombre_piles_vides(
-                game
+                game,
+                game_id,
+            ),
+
+        # Déduites de notre score exact
+        # (voir deck.py).
+        "curses_recues":
+            etat.get(
+                "curses_recues",
+                0,
+            ),
+
+        "deck_coherent":
+            etat.get(
+                "deck_coherent",
+                True,
+            ),
+
+        "cartes_retirees":
+            dict(
+                etat.get(
+                    "cartes_retirees",
+                    {},
+                )
             ),
 
         "piles_basses":
@@ -357,6 +584,16 @@ def afficher_situation(
         "strategie":
             etat.get(
                 "strategie_actuelle"
+            ),
+
+        "plan_initial":
+            etat.get(
+                "plan_initial"
+            ),
+
+        "changement_plan":
+            etat.get(
+                "changement_plan"
             ),
     }
 
@@ -421,10 +658,14 @@ def afficher_situation(
                 situation
             )
 
-        sauvegarder(
-            game_id,
-            historique,
-        )
+            # Nouveau tour : on
+            # sauvegarde sur le disque
+            # (une fois par tour, pas
+            # à chaque /play).
+            sauvegarder(
+                game_id,
+                historique,
+            )
 
 
 def compacter_evaluation_achat(
@@ -462,21 +703,6 @@ def compacter_evaluation_achat(
         reverse=True,
     )[:5]
 
-    choisi = evaluations.get(
-        nom_choisi,
-        {},
-    )
-
-    detail_choisi = {
-        cle: valeur
-        for cle, valeur
-        in choisi.items()
-        if cle not in {
-            "scores_strategies",
-            "strategie",
-        }
-    }
-
     return {
         "decision":
             decision,
@@ -494,7 +720,10 @@ def compacter_evaluation_achat(
         },
 
         "choisi":
-            detail_choisi,
+            evaluations.get(
+                nom_choisi,
+                {},
+            ),
     }
 
 
@@ -555,8 +784,16 @@ def enregistrer_decision(
             )
         )
 
+        # Deux décisions identiques à la
+        # suite sont normales
+        # (ex : BUY Silver deux fois
+        # avec 2 achats) : on les garde
+        # toutes.
+        # Seul END_TURN répété dans le
+        # même tour est un doublon.
         if (
-            not decisions
+            decision != "END_TURN"
+            or not decisions
             or decisions[-1]
             != decision
         ):
@@ -572,11 +809,6 @@ def enregistrer_decision(
                 evaluation
             )
 
-        sauvegarder(
-            game_id,
-            historique,
-        )
-
 
 def marquer_abandon(
     game_id: str,
@@ -591,6 +823,20 @@ def marquer_abandon(
             )
         )
 
+        # Appelé à chaque /play tant
+        # que le bot officiel est en
+        # face : on n'écrit sur le
+        # disque que la première fois.
+        deja_marque = (
+            historique.get(
+                "abandon"
+            )
+            and historique.get(
+                "raison_abandon"
+            )
+            == raison
+        )
+
         historique[
             "abandon"
         ] = True
@@ -599,10 +845,11 @@ def marquer_abandon(
             "raison_abandon"
         ] = raison
 
-        sauvegarder(
-            game_id,
-            historique,
-        )
+        if not deja_marque:
+            sauvegarder(
+                game_id,
+                historique,
+            )
 
 
 def est_abandon(
@@ -688,42 +935,199 @@ def elimination_precoce_probable(
     )
 
 
-def est_victoire(
+# =========================================================
+# RÉSULTAT DE LA PARTIE
+#
+# /end_game ne reçoit pas l'état final : on part de la
+# dernière situation vue.
+#
+# - Si c'est NOUS qui finissons la partie, l'arbitre
+#   nous rappelle /play avec la partie finie : le
+#   résultat est exact.
+# - Sinon, un adversaire l'a finie APRÈS notre dernier
+#   tour, et ses derniers achats nous sont inconnus
+#   (2/3 des parties dans les logs du jour 4) : on
+#   estime ce qu'il a gagné.
+# =========================================================
+
+POINTS_PROVINCE = 6
+SCORE_ELIMINE = -10000
+
+
+def estimer_resultat(
+    situation: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Renvoie le résultat ("V" / "D") et sa
+    certitude :
+
+    - "exacte"  : on a vu la partie finie ;
+    - "sure"    : quoi qu'aient fait les
+                  adversaires après nous, le
+                  résultat ne peut pas changer ;
+    - "estimee" : on ajoute au meilleur
+                  adversaire ce qu'il a gagné
+                  en moyenne pendant le tour
+                  final (voir gain_estime).
+    """
+
+    scores = situation.get(
+        "scores"
+    ) or {}
+
+    joueur = situation.get(
+        "joueur"
+    )
+
+    if joueur not in scores:
+        return {
+            "resultat": "D",
+            "certitude": "inconnue",
+        }
+
+    mon_score = scores[joueur]
+
+    adverses = [
+        score
+        for nom, score
+        in scores.items()
+        if nom != joueur
+        and score
+        > SCORE_ELIMINE
+    ]
+
+    if not adverses:
+        return {
+            "resultat": "V",
+            "certitude": "exacte",
+            "mon_score": mon_score,
+        }
+
+    meilleur = max(adverses)
+    nb_adv = len(adverses)
+
+    provinces = (
+        situation.get(
+            "stock"
+        ) or {}
+    ).get(
+        "province"
+    )
+
+    details = {
+        "mon_score": mon_score,
+        "meilleur_adverse": meilleur,
+        "ecart_vu": (
+            mon_score - meilleur
+        ),
+        "provinces_restantes": provinces,
+        "piles_vides": situation.get(
+            "piles_vides"
+        ),
+        "tour": situation.get(
+            "tour"
+        ),
+    }
+
+    if situation.get(
+        "partie_finie"
+    ):
+        return {
+            "resultat": (
+                "V"
+                if mon_score >= meilleur
+                else "D"
+            ),
+            "certitude": "exacte",
+            "egalite": (
+                mon_score == meilleur
+            ),
+            **details,
+        }
+
+    restantes = int(
+        provinces or 0
+    )
+
+    # Ce qu'a gagné le meilleur
+    # adversaire après notre dernier
+    # tour. Réglé sur 1800 parties
+    # simulées (vrai résultat connu) :
+    # - à 2 joueurs, il a pris la
+    #   dernière Province : +6
+    #   (98 % de résultats justes) ;
+    # - à 3-4 joueurs, la dernière
+    #   Province part souvent chez un
+    #   autre adversaire : +3 en
+    #   moyenne (85 % justes, contre
+    #   75 % sans estimation).
+    if nb_adv == 1:
+        gain_estime = POINTS_PROVINCE
+
+    else:
+        gain_estime = (
+            POINTS_PROVINCE // 2
+        )
+
+    # Bornes extrêmes : au plus 2
+    # Provinces par adversaire, et
+    # des Curses (Witch) pour nous ou
+    # pour le meilleur adversaire.
+    gain_max = (
+        POINTS_PROVINCE
+        * min(
+            restantes,
+            2 * nb_adv,
+        )
+    )
+
+    if (
+        mon_score - nb_adv
+        > meilleur + gain_max
+    ):
+        resultat = "V"
+        certitude = "sure"
+
+    elif (
+        mon_score
+        < meilleur - (nb_adv - 1)
+    ):
+        resultat = "D"
+        certitude = "sure"
+
+    else:
+        # Égalité comptée V, comme
+        # dans le cas "exacte".
+        resultat = (
+            "V"
+            if mon_score
+            >= meilleur + gain_estime
+            else "D"
+        )
+        certitude = "estimee"
+
+    return {
+        "resultat": resultat,
+        "certitude": certitude,
+        "gain_adverse_estime": (
+            gain_estime
+        ),
+        **details,
+    }
+
+
+def derniere_situation(
     historique: dict[str, Any],
-) -> bool:
+) -> dict[str, Any]:
     situations = historique.get(
         "situations",
         [],
     )
 
-    if not situations:
-        return False
-
-    derniere = situations[-1]
-
-    scores = derniere.get(
-        "scores",
-        {},
-    )
-
-    mon_joueur = derniere.get(
-        "joueur"
-    )
-
-    if (
-        not scores
-        or mon_joueur
-        not in scores
-    ):
-        return False
-
     return (
-        scores[
-            mon_joueur
-        ]
-        == max(
-            scores.values()
-        )
+        situations[-1]
+        if situations
+        else {}
     )
 
 
@@ -1026,6 +1430,12 @@ def generer_resume(
     par_joueurs = {}
     strategies = {}
 
+    # Fiabilité des V/D (voir
+    # estimer_resultat) et erreurs
+    # rattrapées dans /play.
+    certitudes = {}
+    erreurs_play = 0
+
     tours = []
     scores = []
     actions = []
@@ -1077,6 +1487,31 @@ def generer_resume(
                 stats_joueurs[
                     resultat
                 ] += 1
+
+        certitude = (
+            historique.get(
+                "fin_partie"
+            ) or {}
+        ).get(
+            "certitude"
+        )
+
+        if certitude:
+            certitudes[
+                certitude
+            ] = (
+                certitudes.get(
+                    certitude,
+                    0,
+                )
+                + 1
+            )
+
+        erreurs_play += len(
+            historique.get(
+                "erreurs"
+            ) or []
+        )
 
         # Les F ne sont pas utilisés
         # pour évaluer la stratégie.
@@ -1226,6 +1661,12 @@ def generer_resume(
 
         "par_nombre_joueurs":
             par_joueurs,
+
+        "certitude_resultats":
+            certitudes,
+
+        "erreurs_play":
+            erreurs_play,
 
         "moyennes": {
             "tour_final":
@@ -1391,7 +1832,11 @@ def terminer_historique(
             )
         )
 
-        if not temporaire.exists():
+        if (
+            game_id
+            not in _historiques
+            and not temporaire.exists()
+        ):
             return
 
         historique = (
@@ -1420,13 +1865,20 @@ def terminer_historique(
                 "elimination_precoce"
             )
 
-        elif est_victoire(
-            historique
-        ):
-            resultat = "V"
-
         else:
-            resultat = "D"
+            fin = estimer_resultat(
+                derniere_situation(
+                    historique
+                )
+            )
+
+            historique[
+                "fin_partie"
+            ] = fin
+
+            resultat = fin[
+                "resultat"
+            ]
 
         historique[
             "fin"
@@ -1451,6 +1903,16 @@ def terminer_historique(
 
         temporaire.unlink(
             missing_ok=True
+        )
+
+        oublier_partie(
+            game_id
+        )
+
+    with _verrou_registre_logs:
+        _verrous_logs_parties.pop(
+            game_id,
+            None,
         )
 
     if final is not None:

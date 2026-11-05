@@ -4,6 +4,7 @@ from dopynion.cards import Card
 from dopynion.data_model import Game
 
 from config import NOM_BOT_OFFICIEL
+from state import obtenir_etat
 
 
 def trouver_mon_joueur(
@@ -50,15 +51,14 @@ def quantite_stock(
     game: Game,
     nom: str,
 ) -> int:
-    nom = nom.lower()
-
+    # CardName est une chaîne en
+    # minuscules : "province" == carte.
     return next(
         (
             quantite
             for carte, quantite
             in game.stock.quantities.items()
-            if carte.value.lower()
-            == nom
+            if carte == nom
         ),
         0,
     )
@@ -82,27 +82,79 @@ def curses_restantes(
     )
 
 
+def piles_presentes(
+    game: Game,
+) -> set[str]:
+    return {
+        str(carte)
+        for carte, quantite
+        in game.stock.quantities.items()
+        if quantite > 0
+    }
+
+
 def nombre_piles_vides(
     game: Game,
+    game_id: str | None = None,
 ) -> int:
-    return sum(
+    # Attention : Dopynion RETIRE les
+    # piles vides de la réserve envoyée.
+    # Compter les quantités à 0 donne
+    # donc toujours 0. Il faut comparer
+    # avec les piles vues au premier
+    # /play de la partie.
+    vides_explicites = sum(
         quantite == 0
         for quantite
         in game.stock.quantities.values()
     )
 
+    if game_id is None:
+        return vides_explicites
+
+    initiales = obtenir_etat(
+        game_id
+    ).get(
+        "piles_initiales"
+    )
+
+    if not initiales:
+        return vides_explicites
+
+    return len(
+        set(initiales)
+        - piles_presentes(
+            game
+        )
+    )
+
 
 def risque_fin_par_piles(
     game: Game,
+    game_id: str | None = None,
 ) -> bool:
-    trois_piles = sorted(
-        game.stock.quantities.values()
-    )[:3]
+    vides = nombre_piles_vides(
+        game,
+        game_id,
+    )
+
+    if vides >= 3:
+        return True
+
+    manquantes = 3 - vides
+
+    plus_petites = sorted(
+        quantite
+        for quantite
+        in game.stock.quantities.values()
+        if quantite > 0
+    )[:manquantes]
 
     return (
-        len(trois_piles) == 3
+        len(plus_petites)
+        == manquantes
         and sum(
-            trois_piles
+            plus_petites
         ) <= len(
             game.players
         )
